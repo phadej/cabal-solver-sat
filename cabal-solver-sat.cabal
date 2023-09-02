@@ -32,6 +32,8 @@ common language
     RankNTypes
     RoleAnnotations
     ScopedTypeVariables
+    OverloadedRecordDot
+    NoFieldSelectors
 
 library
   import:          language

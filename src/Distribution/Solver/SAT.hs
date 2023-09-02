@@ -2,7 +2,9 @@ module Distribution.Solver.SAT where
 
 import Data.Set (Set)
 import Data.Void (Void)
-import Distribution.PackageDescription (PackageName)
+import Distribution.PackageDescription (PackageName, PackageIdentifier)
+import Distribution.Types.UnitId (UnitId)
+import Data.Map (Map)
 
 import qualified Distribution.System as C
 import qualified Distribution.Compiler as C
@@ -22,6 +24,8 @@ type DependencyResolver loc =
     IO [ResolvedPackage]
 
 -- | Installed package index.
+--
+-- indexed by unitid and map packagename (map packageindex InstalledPAckage)
 type InstalledPackageIndex = ()
 
 -- | Source package index, i.e. all packages to be built.
@@ -44,5 +48,11 @@ data ResolvedPackage
     | Preinstalled InstalledPackage
   deriving (Show)
 
-type InstalledPackage = () -- TODO stripped down InstalledPackageInfo
+data InstalledPackage = MkInstalledPackage
+    { packageId :: !PackageIdentifier
+    , unitId    :: !UnitId
+    , depends   :: !(Set UnitId)
+    }
+  deriving Show
+
 type SourcePackage    = () -- PackageId + flag assignment.
