@@ -16,7 +16,7 @@ import qualified Distribution.System   as C
 -- | Resolved package.
 data ResolvedPackage
     = FromSource   PackageIdentifier (Set LibraryName) FlagAssignment
-      -- ^ build from source. We are track libraries only atm.
+      -- ^ build from source. We only track library components at the moment.
       --
       -- To track exe-dependencies (@build-tool-depends@), tests and benchmarks, we'll need to change to @'Set' 'LibraryName'@ to @'Set' 'ComponentName'@.
 

@@ -7,7 +7,10 @@ import Distribution.Solver.SAT.Base
 
 -- | Source package index, i.e. all packages to be built.
 -- Includes the local packages as well (which shadow repositories).
-data SourcePackageIndex = MkSourcePackageIndex (Map PackageName (Map Version SourcePackage))
+data SourcePackageIndex = MkSourcePackageIndex
+    { location :: FilePath
+    , packages :: Map PackageName (Map Version SourcePackage)
+    }
   deriving Show
 
 data SourcePackage
