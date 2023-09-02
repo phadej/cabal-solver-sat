@@ -1,0 +1,46 @@
+cabal-version:   2.4
+name:            cabal-sat-solver
+version:         0.1.0.0
+synopsis:        cabal-install solver using sat-simple.
+description:
+  cabal-install solver using @sat-simple@.
+
+license:         BSD-3-Clause
+license-file:    LICENSE
+author:          Oleg Grenrus <oleg.grenrus@iki.fi>
+maintainer:      Oleg Grenrus <oleg.grenrus@iki.fi>
+copyright:       2023 Oleg Grenrus
+category:        Data
+build-type:      Simple
+extra-doc-files: CHANGELOG.md
+tested-with:
+  GHC ==8.6.5
+   || ==8.8.5
+   || ==8.10.7
+   || ==9.0.2
+   || ==9.2.8
+   || ==9.4.7
+   || ==9.6.2
+
+common language
+  default-language:   Haskell2010
+  default-extensions:
+    DeriveTraversable
+    GADTs
+    PatternSynonyms
+    PatternSynonyms
+    RankNTypes
+    RoleAnnotations
+    ScopedTypeVariables
+
+library
+  import:          language
+  hs-source-dirs:  src
+  exposed-modules: Distribution.Solver.SAT
+  build-depends:
+    , base           >=4.17     && <4.19
+    , containers     ^>=0.6.0.1
+    , sat-simple
+    , tar ^>=0.5.1.1
+    , cabal-install-parsers ^>=0.6.1
+    , Cabal-syntax ^>=3.10.1.0

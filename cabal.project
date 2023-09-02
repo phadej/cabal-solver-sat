@@ -1,0 +1,8 @@
+packages: .
+
+tests: True
+
+package cabal-solver-sat
+  ghc-options: -Wall
+
+packages: *.tar.gz
