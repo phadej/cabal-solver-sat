@@ -13,7 +13,7 @@ module Distribution.Solver.SAT.Demo (
 import Distribution.Solver.SAT
 import Distribution.Solver.SAT.Base
 
-import qualified Cabal.Index as CI
+import qualified Cabal.Index           as CI
 import qualified Distribution.Compiler as C
 import qualified Distribution.System   as C
 

@@ -6,7 +6,8 @@ import Data.Set                        as X (Set)
 import Data.Void                       as X (Void)
 import Distribution.Package            as X (packageName, packageVersion)
 import Distribution.PackageDescription as X
-       (FlagAssignment, PackageIdentifier (..), LibraryName, PackageName, mkPackageName)
+       (FlagAssignment, LibraryName, PackageIdentifier (..), PackageName,
+       mkPackageName)
 import Distribution.Types.UnitId       as X (UnitId, mkUnitId)
 import Distribution.Version            as X (Version, VersionRange, mkVersion)
 import GHC.Records                     as X (HasField (..))
