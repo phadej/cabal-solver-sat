@@ -15,7 +15,12 @@ import GHC.Records               as X (HasField (..))
 import Prelude                   as X hiding (pi)
 import System.IO                 as X (IOMode (..), withFile)
 import Text.Printf               as X (printf)
+import Data.Maybe as X (catMaybes)
+import Data.Either as X (partitionEithers)
+import Data.Foldable as X (foldl')
 
 import Distribution.PackageDescription as X
        (FlagAssignment, GenericPackageDescription (..), LibraryName,
-       PackageIdentifier (..), PackageName, mkPackageName)
+       CondTree (..), CondBranch (..), FlagName, PackageIdentifier (..), PackageName, mkPackageName)
+
+import Distribution.Types.DependencyMap as X (DependencyMap, toDepMap, fromDepMap)

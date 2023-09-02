@@ -15,5 +15,24 @@ satSolver platform compilerInfo installedIndex sourceIndex _pkgConfigDb _prefere
             liftIO $ print targets
             return []
 
-data Model a
-  deriving (Functor, Foldable, Traversable)
+-- | Complete model.
+data Model a = MkModel
+    { packages :: Map PackageName (ModelPackage a)
+    }
+  deriving (Show, Functor, Foldable, Traversable)
+
+data ModelPackage a = MkModelPackage 
+    { libraries :: !(Map LibraryName a)  -- ^ requested libraries.
+    , versions  :: !(Map Version ())
+    }
+  deriving (Show, Functor, Foldable, Traversable)
+
+data ModelVersion a
+    = ShallowVersion a
+      -- ^ we have only create a placeholder literal for this version
+
+    | DeepVersion a (Set LibraryName) (Map FlagName a) DependencyMap
+      -- ^ the version has been selected, so we expanded it further.
+      --
+      -- The members are selection literal, set of available libraries, automatic flag assignment and dependency map.
+  deriving (Show, Functor, Foldable, Traversable)
