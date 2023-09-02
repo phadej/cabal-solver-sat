@@ -4,7 +4,7 @@ module Distribution.Solver.SAT.Installed (
     mkInstalledPackageIndex,
 ) where
 
-import  Distribution.Solver.SAT.Base
+import Distribution.Solver.SAT.Base
 
 import qualified Data.Map as Map
 
@@ -35,4 +35,4 @@ mkInstalledPackageIndex pkgs = MkInstalledPackageIndex {..} where
     packages = Map.fromListWith (Map.unionWith (++))
         [ (pkg.name, Map.singleton pkg.version [pkg])
         | pkg <- pkgs
-        ] 
+        ]

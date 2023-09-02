@@ -1,10 +1,14 @@
 module Distribution.Solver.SAT where
 
-import  Distribution.Solver.SAT.Base
-import  Distribution.Solver.SAT.Installed
+import Distribution.Solver.SAT.Base
+import Distribution.Solver.SAT.Constraints
+import Distribution.Solver.SAT.Installed
+import Distribution.Solver.SAT.PkgConfig
+import Distribution.Solver.SAT.Preferences
+import Distribution.Solver.SAT.Sources
 
-import qualified Distribution.System as C
 import qualified Distribution.Compiler as C
+import qualified Distribution.System   as C
 
 -- | Replicating type from @cabal-install-solver@:
 --
@@ -16,29 +20,16 @@ type DependencyResolver =
     SourcePackageIndex ->
     PkgConfigDb ->
     PackagePreferences ->
-    [LabeledPackageConstraint] ->
+    PackageConstraints ->
     Set PackageName ->
     IO [ResolvedPackage]
 
-
 -- | Source package index, i.e. all packages to be built.
 -- Includes the local packages as well (which shadow repositories).
-type SourcePackageIndex = ()
-
--- | For now we don't support @pkg-config@ dependencies.
--- We assume they are always satisfied.
-type PkgConfigDb = ()
-
--- | For now we don't support preferences. It's quite hard with SAT.
-type PackagePreferences = ()
-
--- | For now there aren't external constraints.
-type LabeledPackageConstraint = Void
+type SourcePackageIndex = Map PackageName (Map Version TarEntryOffset)
 
 -- | Resolved package.
 data ResolvedPackage
-    = FromSource   SourcePackage
+    = FromSource   PackageIdentifier FlagAssignment
     | Preinstalled InstalledPackage
   deriving (Show)
-
-type SourcePackage    = () -- PackageId + flag assignment.

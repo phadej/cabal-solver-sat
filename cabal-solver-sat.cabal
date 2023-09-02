@@ -2,9 +2,7 @@ cabal-version:   2.4
 name:            cabal-solver-sat
 version:         0.1.0.0
 synopsis:        cabal-install solver using sat-simple.
-description:
-  cabal-install solver using @sat-simple@.
-
+description:     cabal-install solver using @sat-simple@.
 license:         BSD-3-Clause
 license-file:    LICENSE
 author:          Oleg Grenrus <oleg.grenrus@iki.fi>
@@ -13,35 +11,42 @@ copyright:       2023 Oleg Grenrus
 category:        Data
 build-type:      Simple
 extra-doc-files: CHANGELOG.md
-tested-with:
-  GHC ==9.2.8
-   || ==9.4.7
-   || ==9.6.2
+tested-with:     GHC ==9.2.8 || ==9.4.7 || ==9.6.2
 
 common language
   default-language:   Haskell2010
   default-extensions:
+    NoFieldSelectors
+    DataKinds
     DeriveTraversable
     GADTs
+    OverloadedRecordDot
     PatternSynonyms
     PatternSynonyms
-    DataKinds
     RankNTypes
+    RecordWildCards
     RoleAnnotations
     ScopedTypeVariables
-    OverloadedRecordDot
-    NoFieldSelectors
-    RecordWildCards
 
 library
   import:          language
   hs-source-dirs:  src
   exposed-modules: Distribution.Solver.SAT.Demo
-  exposed-modules: Distribution.Solver.SAT Distribution.Solver.SAT.Base Distribution.Solver.SAT.Installed
+  exposed-modules:
+    Distribution.Solver.SAT
+    Distribution.Solver.SAT.Base
+    Distribution.Solver.SAT.Constraints
+    Distribution.Solver.SAT.DependencyInfo
+    Distribution.Solver.SAT.Installed
+    Distribution.Solver.SAT.PkgConfig
+    Distribution.Solver.SAT.Preferences
+    Distribution.Solver.SAT.Solver
+    Distribution.Solver.SAT.Sources
+
   build-depends:
-    , base           >=4.17     && <4.19
-    , containers     ^>=0.6.0.1
+    , base                   >=4.17      && <4.19
+    , cabal-install-parsers  ^>=0.6.1
+    , Cabal-syntax           ^>=3.10.1.0
+    , containers             ^>=0.6.0.1
     , sat-simple
-    , tar ^>=0.5.1.1
-    , cabal-install-parsers ^>=0.6.1
-    , Cabal-syntax ^>=3.10.1.0
+    , tar                    ^>=0.5.1.1
