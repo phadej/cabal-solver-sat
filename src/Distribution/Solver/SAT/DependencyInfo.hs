@@ -1,1 +1,3 @@
-module Distribution.Solver.SAT.DependencyInfo () where
+module Distribution.Solver.SAT.DependencyInfo (
+
+) where

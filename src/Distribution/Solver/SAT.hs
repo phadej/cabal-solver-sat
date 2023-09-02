@@ -1,11 +1,16 @@
-module Distribution.Solver.SAT where
+module Distribution.Solver.SAT (
+    DependencyResolver,
+    module X,  
+) where
 
 import Distribution.Solver.SAT.Base
-import Distribution.Solver.SAT.Constraints
-import Distribution.Solver.SAT.Installed
-import Distribution.Solver.SAT.PkgConfig
-import Distribution.Solver.SAT.Preferences
-import Distribution.Solver.SAT.Sources
+
+import Distribution.Solver.SAT.Constraints as X
+import Distribution.Solver.SAT.Installed as X
+import Distribution.Solver.SAT.PkgConfig as X
+import Distribution.Solver.SAT.Preferences as X
+import Distribution.Solver.SAT.Sources as X
+import Distribution.Solver.SAT.Solver as X
 
 import qualified Distribution.Compiler as C
 import qualified Distribution.System   as C
@@ -23,13 +28,3 @@ type DependencyResolver =
     PackageConstraints ->
     Set PackageName ->
     IO [ResolvedPackage]
-
--- | Source package index, i.e. all packages to be built.
--- Includes the local packages as well (which shadow repositories).
-type SourcePackageIndex = Map PackageName (Map Version TarEntryOffset)
-
--- | Resolved package.
-data ResolvedPackage
-    = FromSource   PackageIdentifier FlagAssignment
-    | Preinstalled InstalledPackage
-  deriving (Show)
