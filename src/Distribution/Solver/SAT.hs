@@ -1,10 +1,7 @@
 module Distribution.Solver.SAT where
 
-import Data.Set (Set)
-import Data.Void (Void)
-import Distribution.PackageDescription (PackageName, PackageIdentifier)
-import Distribution.Types.UnitId (UnitId)
-import Data.Map (Map)
+import  Distribution.Solver.SAT.Base
+import  Distribution.Solver.SAT.Installed
 
 import qualified Distribution.System as C
 import qualified Distribution.Compiler as C
@@ -12,7 +9,7 @@ import qualified Distribution.Compiler as C
 -- | Replicating type from @cabal-install-solver@:
 --
 -- https://hackage.haskell.org/package/cabal-install-solver-3.10.1.0/docs/Distribution-Solver-Types-DependencyResolver.html#t:DependencyResolver
-type DependencyResolver loc =
+type DependencyResolver =
     C.Platform ->
     C.CompilerInfo ->
     InstalledPackageIndex ->
@@ -23,10 +20,6 @@ type DependencyResolver loc =
     Set PackageName ->
     IO [ResolvedPackage]
 
--- | Installed package index.
---
--- indexed by unitid and map packagename (map packageindex InstalledPAckage)
-type InstalledPackageIndex = ()
 
 -- | Source package index, i.e. all packages to be built.
 -- Includes the local packages as well (which shadow repositories).
@@ -47,12 +40,5 @@ data ResolvedPackage
     = FromSource   SourcePackage
     | Preinstalled InstalledPackage
   deriving (Show)
-
-data InstalledPackage = MkInstalledPackage
-    { packageId :: !PackageIdentifier
-    , unitId    :: !UnitId
-    , depends   :: !(Set UnitId)
-    }
-  deriving Show
 
 type SourcePackage    = () -- PackageId + flag assignment.
