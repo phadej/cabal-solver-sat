@@ -13,7 +13,12 @@ satSolver :: DependencyResolver
 satSolver platform compilerInfo installedIndex sourceIndex _pkgConfigDb _preferences _constraints targets = do
     withFile sourceIndex.location ReadMode $ \sourceIndexHdl -> do
         runSAT $ do
-            liftIO $ print targets
+
+            forM_ targets $ \targetPkgName -> do
+                liftIO $ print targetPkgName
+                let targetVersions = lookupSourcePackage targetPkgName sourceIndex
+                liftIO $ print targetVersions
+
             return []
 
 -- | Complete model.

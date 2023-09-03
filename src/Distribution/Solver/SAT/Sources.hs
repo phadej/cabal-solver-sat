@@ -1,9 +1,12 @@
 module Distribution.Solver.SAT.Sources (
     SourcePackageIndex (..),
     SourcePackage (..),
+    lookupSourcePackage,
 ) where
 
 import Distribution.Solver.SAT.Base
+
+import qualified Data.Map.Strict as Map
 
 -- | Source package index, i.e. all packages to be built.
 -- Includes the local packages as well (which shadow repositories).
@@ -14,6 +17,9 @@ data SourcePackageIndex = MkSourcePackageIndex
   deriving Show
 
 data SourcePackage
-    = ProjectPackage !FilePath       -- ^ local, project package.
-    | RemotePackage !TarEntryOffset  -- ^ package in a source-repository. tar entry offset tells which.
+    = ProjectPackage !GenericPackageDescription  -- ^ local, project package.
+    | RemotePackage !TarEntryOffset              -- ^ package in a source-repository. tar entry offset tells which.
   deriving Show
+
+lookupSourcePackage :: PackageName -> SourcePackageIndex -> Map Version SourcePackage
+lookupSourcePackage pn idx = Map.findWithDefault Map.empty pn idx.packages

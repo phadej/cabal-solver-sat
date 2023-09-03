@@ -63,6 +63,7 @@ demo cabalFile = do
     contents <- BS.readFile cabalFile
     gpd <- maybe (fail "foo") return (parseGenericPackageDescriptionMaybe contents)
     let pn = gpdPackageName gpd
+        pv = gpdPackageVersion gpd
     printf "Solving for %s\n" (prettyShow pn)
 
     -- constructing source package index
@@ -80,7 +81,7 @@ demo cabalFile = do
             & Map.delete (mkPackageName "template-haskell")
 
             -- remove the target package name from the source index.
-            & Map.delete pn
+            & Map.insert pn (Map.singleton pv (ProjectPackage gpd))
 
     printf "SourcePackageIndex at: %s\n" demoSourcePackageIndex.location
     printf "SourcePackageIndex size: %d\n" (Map.size demoSourcePackageIndex.packages)
@@ -110,3 +111,6 @@ mkSourcePackage = RemotePackage . CI.riTarOffset
 
 gpdPackageName :: GenericPackageDescription -> PackageName
 gpdPackageName = packageName . C.package . packageDescription
+
+gpdPackageVersion :: GenericPackageDescription -> Version
+gpdPackageVersion = packageVersion . C.package . packageDescription
