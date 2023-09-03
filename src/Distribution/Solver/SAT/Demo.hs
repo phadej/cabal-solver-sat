@@ -28,9 +28,10 @@ import qualified Distribution.System             as C
 -- | Installed package index with @base-4.17.1.0@
 demoInstalledPackageIndex :: InstalledPackageIndex
 demoInstalledPackageIndex = mkInstalledPackageIndex
-    [ mk "base" [4,17,1,0]
-    , mk "ghc-prim" [0,9,1]
-    , mk "template-haskell" [2,19,0,0]
+    [ mk "base"               [4,17,1,0]
+    , mk "ghc-prim"           [0,9,1]
+    , mk "template-haskell"   [2,19,0,0]
+    , mk "system-cxx-std-lib" [1,0]
 
     , mk "sat-simple" [0,1,0,0]
     ]

@@ -75,7 +75,7 @@ satSolver platform compilerInfo installedIndex sourceIndex _pkgConfigDb _prefere
 
                     ifor_ di.libraries $ \ln depends -> do
                         (Identity lnLit, _verLits) <- getComponentLiterals sourceIndex pn (Identity ln)
-                        liftIO $ printf "Component %s %s literal %s\n" (prettyShow (PackageIdentifier pn ver)) (show ln) (show lnLit)
+                        liftIO $ printf "Component %s %s literal %s %s\n" (prettyShow (PackageIdentifier pn ver)) (show ln) (show lnLit) (show verLit)
 
                         expandCondTree sourceIndex lnLit verLit aflags depends
 
@@ -88,7 +88,7 @@ satSolver platform compilerInfo installedIndex sourceIndex _pkgConfigDb _prefere
 
         liftIO $ printBriefModel modelB'.model
 
-        if modelB'.expanded && iteration < 10
+        if modelB'.expanded && iteration < 20
         then loop (iteration + 1) sourceIndexHdl model' modelB'
         else return modelB'.model
 
@@ -173,7 +173,7 @@ type MonadSolver s = StateT (S (Lit s)) (SAT s)
 
 assertImplication :: [Lit s] -> [Lit s] -> MonadSolver s ()
 assertImplication xs ys = do
-    -- liftIO $ putStrLn $ "assertClause: " ++ show ls
+    -- liftIO $ putStrLn $ "assertImplication: " ++ show xs ++ show ys
     lift $ addClause $ map neg xs ++ ys
 
 getPackageVersion_ :: SourcePackageIndex -> PackageName -> MonadSolver s (Map Version (Lit s))
@@ -232,6 +232,8 @@ expandCondTree sourceIndex srcCompLit srcVerLit _aflags = go [] where
     go conds (CondNode dm () bs) = do
         forM_ (fromDepMap dm) $ \(Dependency pn vr lns) -> do
             (lnLits, verLits) <- getComponentLiterals sourceIndex pn (toList lns)
+
+            -- liftIO $ putStrLn $ prettyShow pn ++ show verLits
 
             when (null verLits) $ do
                 liftIO $ printf "dependency on package without any available versions: %s -> %s\n" "foo" (prettyShow pn)
