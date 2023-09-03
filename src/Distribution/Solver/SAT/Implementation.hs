@@ -126,6 +126,7 @@ data ModelPackageInfo a
 
 type MonadSolver s = StateT (S (Lit s)) (SAT s)
 
+-- TODO: don't create component literals here.
 packageVersions
     :: Traversable t
     => SourcePackageIndex   -- ^ source package inedx
