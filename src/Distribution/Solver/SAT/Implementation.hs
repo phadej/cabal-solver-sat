@@ -21,7 +21,6 @@ satSolver :: DependencyResolver
 satSolver platform compilerInfo installedIndex sourceIndex _pkgConfigDb _preferences _constraints targets = do
     withFile sourceIndex.location ReadMode $ \sourceIndexHdl -> do
         runSAT $ do
-
             -- create initial model
             model <- flip execStateT emptyS $ do
                 forM_  (installedPackageIndexUnits installedIndex) $ \ip -> do
@@ -37,41 +36,61 @@ satSolver platform compilerInfo installedIndex sourceIndex _pkgConfigDb _prefere
                 -- add target packages
                 forM_ targets $ \targetPkgName -> do
                     liftIO $ printf "Target package: %s\n" (prettyShow targetPkgName)
-                    (Identity libLit, _verLits) <- packageVersions sourceIndex targetPkgName (Identity LMainLibName)
+
+                    -- get literals for package components and versions
+                    (Identity libLit, verLits) <- getComponentLiterals sourceIndex targetPkgName (Identity LMainLibName)
 
                     -- require library component to be available.
                     lift $ addClause [libLit]
-
+                    
+                    -- require at least one version to be available
+                    lift $ assertAtLeastOne (toList verLits)
+                    
             modelB <- solve model
 
-            liftIO $ print modelB
+            liftIO $ printModel modelB.model
 
-            model1 <- flip execStateT model $
-                ifor_ modelB.model.packages $ \pn pkg -> when (or pkg.libraries) $
-                ifor_ pkg.versions $ \ver def -> case def of
-                    ShallowVersion True -> do
-                        verLit <- getVersionLiteral pn ver
-
-                        liftIO $ printf "Expanding selected %s (literal %s)\n" (prettyShow (PackageIdentifier pn ver)) (show verLit)
-                        gpd <- liftIO $ readSourcePackage sourceIndexHdl pn ver sourceIndex
-                        let di = mkDependencyInfo platform compilerInfo gpd
-
-                        aflags <- forM di.autoFlags $ \_ -> lift newLit
-                        liftIO $ print aflags
-
-                        ifor_ di.libraries $ \ln depends -> do
-                            lnLit <- getComponentLiteral pn ver ln
-                            liftIO $ printf "Component %s %s literal %s\n" (prettyShow (PackageIdentifier pn ver)) (show ln) (show lnLit)
-
-                            liftIO $ print depends
-                            expandCondTree sourceIndex aflags depends
-
-                        #model % #packages % ix pn % #versions % ix ver .=
-                            DeepVersion verLit aflags di
-
-                    _ -> return ()
+            resultModel <- loop 1 sourceIndexHdl model modelB
 
             return []
+  where
+    loop :: Int -> Handle -> S (Lit s) -> S Bool -> SAT s (Model Bool)
+    loop iteration sourceIndexHdl model modelB = do
+        liftIO $ putStrLn "--------------------------------------------------"
+        liftIO $ printf "Iteration %d\n" iteration
+        liftIO $ putStrLn "--------------------------------------------------"
+
+        model' <- flip execStateT (model & #expanded .~ False) $
+            ifor_ modelB.model.packages $ \pn pkg -> when (or pkg.libraries) $
+            ifor_ pkg.versions $ \ver def -> case def of
+                ShallowVersion True -> do
+                    #expanded .= True
+                    verLit <- getVersionLiteral pn ver
+
+                    liftIO $ printf "Expanding selected %s (literal %s)\n" (prettyShow (PackageIdentifier pn ver)) (show verLit)
+                    gpd <- liftIO $ readSourcePackage sourceIndexHdl pn ver sourceIndex
+                    let di = mkDependencyInfo platform compilerInfo gpd
+
+                    aflags <- forM di.autoFlags $ \_ -> lift newLit
+
+                    ifor_ di.libraries $ \ln depends -> do
+                        (Identity lnLit, _verLits) <- getComponentLiterals sourceIndex pn (Identity ln)
+                        liftIO $ printf "Component %s %s literal %s\n" (prettyShow (PackageIdentifier pn ver)) (show ln) (show lnLit)
+
+                        expandCondTree sourceIndex lnLit verLit aflags depends
+
+                    #model % #packages % ix pn % #versions % ix ver .=
+                        DeepVersion verLit aflags di
+
+                _ -> return ()
+
+        modelB' <- solve model'
+
+        liftIO $ printBriefModel modelB'.model
+
+        if modelB'.expanded && iteration < 6
+        then loop (iteration + 1) sourceIndexHdl model' modelB'
+        else return modelB'.model
 
 -------------------------------------------------------------------------------
 -- Model data definitions
@@ -120,48 +139,117 @@ data ModelPackageInfo a
     -- TODO: add constructor for installed packages
   deriving (Show, Functor, Foldable, Traversable)
 
+instance HasField "value" (ModelPackageInfo a) a where
+    getField (ShallowVersion x)  = x
+    getField (DeepVersion x _ _) = x
+
+printModel :: Show a => Model a -> IO ()
+printModel m = ifor_ m.packages $ \pn pkg -> do
+    printf "package %s\n" (prettyShow pn)
+    ifor_ pkg.libraries $ \ln x -> do
+        printf "- component %s %s\n" (show ln) (show x)
+    ifor_ pkg.versions $ \ver x -> do
+        printf "- version %s %s %s\n" (prettyShow ver) (f x) (show x.value)
+  where
+    f ShallowVersion{} = "shallow"
+    f DeepVersion {}   = "expanded"
+
+printBriefModel :: Model Bool -> IO ()
+printBriefModel m = ifor_ m.packages $ \pn pkg -> do
+    printf "package %s\n" (prettyShow pn)
+    printf "- components: %s\n" $ unwords
+        [ show ln | (ln, True) <- Map.toList pkg.libraries ]
+    printf "- versions: %s\n" $ unwords $ concat
+        [ [prettyShow ver, f x] | (ver, x) <- Map.toList pkg.versions, x.value ]
+  where
+    f ShallowVersion{} = "shallow"
+    f DeepVersion {}   = "expanded"
+
 -------------------------------------------------------------------------------
 -- Operations
 -------------------------------------------------------------------------------
 
 type MonadSolver s = StateT (S (Lit s)) (SAT s)
 
--- TODO: don't create component literals here.
-packageVersions
-    :: Traversable t
-    => SourcePackageIndex   -- ^ source package inedx
-    -> PackageName          -- ^ package name
-    -> t LibraryName        -- ^ components
-    -> MonadSolver s (t (Lit s), Map Version (Lit s))  -- ^ literals for each component and available versions.
-packageVersions sourceIndex pn components = do
+assertImplication :: [Lit s] -> [Lit s] -> MonadSolver s ()
+assertImplication xs ys = do
+    -- liftIO $ putStrLn $ "assertClause: " ++ show ls
+    lift $ addClause $ map neg xs ++ ys
+
+getPackageVersion_ :: SourcePackageIndex -> PackageName -> MonadSolver s (Map Version (Lit s))
+getPackageVersion_ sourceIndex pn = do
+    let targetVersions = lookupSourcePackage pn sourceIndex
+
+    verLits  <- forM targetVersions $ \_ -> lift newLit
+
+    lift $ assertAtMostOne (toList verLits)
+
+    return verLits
+
+getVersionLiteral :: PackageName -> Version -> MonadSolver s (Lit s)
+getVersionLiteral pn ver = do
     mv <- use (#model % #packages % at pn)
     case mv of
-        Just x -> error $ show x --TODO
+        Nothing  -> liftIO $ fail "inconsistency?"
+        Just pkg -> case Map.lookup ver pkg.versions of
+            Nothing -> liftIO $ fail "inconsistency two?"
+            Just pi -> return pi.value
+
+-- TODO: return version literals as well
+getComponentLiterals :: Traversable t => SourcePackageIndex -> PackageName -> t LibraryName -> MonadSolver s (t (Lit s), Map Version (Lit s))
+getComponentLiterals sourceIndex pn lns = do
+    mv <- use (#model % #packages % at pn)
+    case mv of
+        Just pkg -> do
+            compLits <- forM lns $ \ln -> case Map.lookup ln pkg.libraries of
+                Just l  -> return l
+                Nothing -> do
+                    l <- lift newLit
+                    #model % #packages % ix pn % #libraries % at ln ?= l
+                    return l
+
+            return (compLits, fmap (.value) pkg.versions)
 
         Nothing -> do
-            let targetVersions = lookupSourcePackage pn sourceIndex
-
-            compLits <- forM components     $ \ln -> (,) ln <$> lift newLit
-            verLits  <- forM targetVersions $ \_ -> lift newLit
-
-            lift $ addClause (toList verLits)
-
+            compLits <- traverse (\l -> (,) l <$> lift newLit) lns
+            verLits <- getPackageVersion_ sourceIndex pn
             #model % #packages % at pn ?= MkModelPackage
-                { libraries = Map.fromList $ toList compLits
+                { libraries = Map.fromList (toList compLits)
                 , versions  = fmap ShallowVersion verLits
                 }
 
             return (fmap snd compLits, verLits)
 
-getVersionLiteral :: PackageName -> Version -> MonadSolver s (Lit s)
-getVersionLiteral pn ver = do
-    -- TODO:
-    lift $ addDefinition false
+expandCondTree
+    :: forall s. SourcePackageIndex
+    -> Lit s                                  -- ^ component literal
+    -> Lit s                                  -- ^ version litearal
+    -> Map FlagName (Lit s)                   -- ^ automatic flags
+    -> CondTree FlagName () DependencyMap     -- ^ dependency info tree
+    -> MonadSolver s ()
+expandCondTree sourceIndex srcCompLit srcVerLit _aflags = go [] where
+    go :: [Lit s] -> CondTree FlagName () DependencyMap -> MonadSolver s ()
+    go conds (CondNode dm () bs) = do
+        forM_ (fromDepMap dm) $ \(Dependency pn vr lns) -> do
+            (lnLits, verLits) <- getComponentLiterals sourceIndex pn (toList lns)
 
-getComponentLiteral :: PackageName -> Version -> LibraryName -> MonadSolver s (Lit s)
-getComponentLiteral pn ver ln = do
-    -- TODO:
-    lift $ addDefinition false
+            when (null verLits) $ do
+                liftIO $ printf "dependency on package without any available versions: %s -> %s\n" "foo" (prettyShow pn)
+            
+            let verLits' :: [Lit s]
+                verLits' =
+                    [ l
+                    | (v, l) <- Map.toList verLits
+                    , v `withinRange` vr
+                    ]
 
-expandCondTree :: SourcePackageIndex -> Map FlagName (Lit s) -> CondTree FlagName () DependencyMap -> MonadSolver s ()
-expandCondTree _ _ _ = return ()
+            -- component depends on library components..
+            forM_ lnLits $ \libLit -> do
+                assertImplication (srcCompLit : srcVerLit : conds) [libLit]
+
+            -- component depends on package versions..
+            -- at least one has to be selected.
+            assertImplication (srcCompLit : srcVerLit : conds) verLits'
+
+        -- unless (null bs) $ liftIO $ fail "autoflags TODO"
+

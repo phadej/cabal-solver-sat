@@ -28,10 +28,14 @@ import qualified Distribution.System             as C
 -- | Installed package index with @base-4.17.1.0@
 demoInstalledPackageIndex :: InstalledPackageIndex
 demoInstalledPackageIndex = mkInstalledPackageIndex
-    [ MkInstalledPackage (PackageIdentifier (mkPackageName "base") (mkVersion [4,17,1,0])) (mkUnitId "base") mempty
-    -- TODO: template-haskell...
-    -- , MkInstalledPackage (PackageIdentifier (mk
+    [ mk "base" [4,17,1,0]
+    , mk "ghc-prim" [0,9,1]
+    , mk "template-haskell" [2,19,0,0]
+
+    , mk "sat-simple" [0,1,0,0]
     ]
+  where
+    mk name digits = MkInstalledPackage (PackageIdentifier (mkPackageName name) (mkVersion digits)) (mkUnitId name) mempty
 
 -- | Demo platform is x86 64bit Linux.
 demoPlatform :: C.Platform

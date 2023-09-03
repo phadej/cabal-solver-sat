@@ -5,9 +5,15 @@ module Distribution.Solver.SAT.Sources (
     readSourcePackage,
 ) where
 
+import Distribution.PackageDescription.Parsec
+       (parseGenericPackageDescriptionMaybe)
+
 import Distribution.Solver.SAT.Base
 
-import qualified Data.Map.Strict as Map
+import qualified Codec.Archive.Tar.Entry as Tar
+import qualified Codec.Archive.Tar.Index as Tar
+import qualified Data.ByteString.Lazy    as LBS
+import qualified Data.Map.Strict         as Map
 
 -- | Source package index, i.e. all packages to be built.
 -- Includes the local packages as well (which shadow repositories).
@@ -31,4 +37,13 @@ readSourcePackage hdl pn pv idx = case Map.lookup pn idx.packages of
     Just vers -> case Map.lookup pv vers of
         Nothing -> fail $ "No" ++ show (pn, pv)
         Just (ProjectPackage gpd) -> return gpd
-        Just (RemotePackage offset) -> fail $ "TODO " ++ show offset
+        Just (RemotePackage offset) -> do
+            entry <- Tar.hReadEntry hdl offset
+            case Tar.entryContent entry of
+                Tar.NormalFile lbs _ -> do
+                    gpd <- maybe (fail "foo") return (parseGenericPackageDescriptionMaybe (LBS.toStrict lbs))
+                    return gpd
+
+
+                _ -> do
+                    fail "wront tar entry"
