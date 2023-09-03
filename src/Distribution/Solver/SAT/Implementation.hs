@@ -3,6 +3,7 @@ module Distribution.Solver.SAT.Implementation (
 ) where
 
 import Distribution.Solver.SAT.Base
+import Distribution.Solver.SAT.DependencyInfo
 import Distribution.Solver.SAT.Solver
 import Distribution.Solver.SAT.Sources
 
@@ -21,9 +22,9 @@ data Model a = MkModel
     }
   deriving (Show, Functor, Foldable, Traversable)
 
-data ModelPackage a = MkModelPackage 
+data ModelPackage a = MkModelPackage
     { libraries :: !(Map LibraryName a)  -- ^ requested libraries.
-    , versions  :: !(Map Version ())
+    , versions  :: !(Map Version (ModelVersion a))
     }
   deriving (Show, Functor, Foldable, Traversable)
 
@@ -31,7 +32,7 @@ data ModelVersion a
     = ShallowVersion a
       -- ^ we have only create a placeholder literal for this version
 
-    | DeepVersion a (Set LibraryName) (Map FlagName a) DependencyMap
+    | DeepVersion a (Map FlagName a) DependencyInfo
       -- ^ the version has been selected, so we expanded it further.
       --
       -- The members are selection literal, set of available libraries, automatic flag assignment and dependency map.

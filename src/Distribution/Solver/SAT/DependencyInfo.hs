@@ -5,21 +5,24 @@ module Distribution.Solver.SAT.DependencyInfo (
 
 import Distribution.Solver.SAT.Base
 
+import qualified Distribution.Compiler           as C
 import qualified Distribution.PackageDescription as C
-import qualified Distribution.System as C
-import qualified Distribution.Compiler as C
-import Distribution.Version
+import qualified Distribution.System             as C
+import           Distribution.Version
 
 import qualified Data.Map as Map
 
 data DependencyInfo = MkDependencyInfo
     { manualFlags :: !(Map FlagName Bool) -- TODO: use FlagAssignment
+    , autoFlags   :: !(Map FlagName Bool)
     , libraries   :: !(Map LibraryName (CondTree FlagName () DependencyMap))
     }
+  deriving Show
 
 mkDependencyInfo :: C.Platform -> C.CompilerInfo -> GenericPackageDescription -> DependencyInfo
 mkDependencyInfo platform compilerInfo gpd = MkDependencyInfo
     { manualFlags = mflags
+    , autoFlags   = aflags
     , libraries   = Map.fromList $ mainLib ++ subLibs
     }
   where
@@ -34,6 +37,9 @@ mkDependencyInfo platform compilerInfo gpd = MkDependencyInfo
 
     mflags :: Map FlagName Bool
     mflags = manualFlags gpd
+
+    aflags :: Map FlagName Bool
+    aflags = automaticFlags gpd
 
     extract :: CondTree C.ConfVar [C.Dependency] C.Library -> CondTree FlagName () DependencyMap
     extract l = fmap (toDepMap . C.targetBuildDepends) $ extract2 platform compilerInfo mflags (extract1 l)
@@ -51,21 +57,27 @@ extract2 (C.Platform arch os) compilerInfo mflags = simplifyCondTree' (simplifyC
 manualFlags :: GenericPackageDescription -> Map FlagName Bool
 manualFlags gpd = Map.fromList
     [ (fn, v)
-    | C.MkPackageFlag { flagName = fn, flagDefault = v, flagManual = True } <- genPackageFlags gpd 
+    | C.MkPackageFlag { flagName = fn, flagDefault = v, flagManual = True } <- genPackageFlags gpd
+    ]
+
+automaticFlags :: GenericPackageDescription -> Map FlagName Bool
+automaticFlags gpd = Map.fromList
+    [ (fn, v)
+    | C.MkPackageFlag { flagName = fn, flagDefault = v, flagManual = False } <- genPackageFlags gpd
     ]
 
 simplifyCondTree'
     :: forall a d u v. (Semigroup a, Semigroup d)
     => (v -> Either u Bool)
     -> CondTree v d a
-    -> CondTree u d a 
+    -> CondTree u d a
 simplifyCondTree' env (CondNode a d ifs) = do
     let (ad1, ifs1) = partitionEithers $ map simplifyIf ifs
     let (ad2, ifs2) = unzipWith (\(CondNode a' d' ifs') -> ((a',d'), ifs')) (catMaybes ad1)
     let (a', d') = foldl' ((<>)) (a,d) ad2
     CondNode a' d' (concat ifs2 ++ ifs1)
   where
-    simplifyIf :: CondBranch v d a -> Either (Maybe (CondTree u d a)) (CondBranch u d a) 
+    simplifyIf :: CondBranch v d a -> Either (Maybe (CondTree u d a)) (CondBranch u d a)
     simplifyIf (CondBranch cnd t me) =
         case C.simplifyCondition cnd env of
           (C.Lit True,  _) -> Left $ Just $ simplifyCondTree' env t
