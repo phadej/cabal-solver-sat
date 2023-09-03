@@ -54,6 +54,7 @@ library
     , cabal-install-parsers  ^>=0.6.1
     , Cabal-syntax           ^>=3.10.1.0
     , containers             ^>=0.6.0.1
+    , indexed-traversable    ^>=0.1.2.1
     , optics-core            ^>=0.4.1.1
     , optics-extra           ^>=0.4.2.1
     , sat-simple             ^>=0.1.0.0

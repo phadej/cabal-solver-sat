@@ -3,6 +3,6 @@ packages: .
 tests: True
 
 package cabal-solver-sat
-  ghc-options: -Wall
+  ghc-options: -Wall -fmax-valid-hole-fits=0 -fno-max-relevant-binds
 
 packages: *.tar.gz

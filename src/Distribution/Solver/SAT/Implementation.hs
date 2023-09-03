@@ -2,9 +2,9 @@ module Distribution.Solver.SAT.Implementation (
     satSolver,
 ) where
 
+import Control.Monad.Trans.State
 import Optics.Core
 import Optics.State.Operators
-import Control.Monad.Trans.State
 
 import qualified Data.Map.Strict as Map
 
@@ -20,8 +20,12 @@ satSolver platform compilerInfo installedIndex sourceIndex _pkgConfigDb _prefere
     withFile sourceIndex.location ReadMode $ \sourceIndexHdl -> do
         runSAT $ do
 
-            -- initial model with targets.
-            model <- flip execStateT emptyModel $ do 
+            -- create initial model
+            model <- flip execStateT emptyModel $ do
+                -- add packages in installed index
+                -- TODO
+
+                -- add target packages
                 forM_ targets $ \targetPkgName -> do
                     liftIO $ printf "Target package: %s\n" (prettyShow targetPkgName)
                     let targetVersions = lookupSourcePackage targetPkgName sourceIndex
@@ -43,6 +47,17 @@ satSolver platform compilerInfo installedIndex sourceIndex _pkgConfigDb _prefere
             modelB <- solve model
 
             liftIO $ print modelB
+
+            ifor_ modelB.packages $ \pn pkg -> do
+              when (any id pkg.libraries) $ do
+                ifor_ pkg.versions $ \ver def -> case def of
+                  ShallowVersion True -> do
+                    liftIO $ printf "Selected unexpanded %s\n" (prettyShow (PackageIdentifier pn ver))
+                    gpd <- liftIO $ readSourcePackage sourceIndexHdl pn ver sourceIndex
+                    let di = mkDependencyInfo platform compilerInfo gpd
+                    liftIO $ print di
+
+                  _ -> return ()
 
             return []
 
