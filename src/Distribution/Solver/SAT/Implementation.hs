@@ -2,6 +2,12 @@ module Distribution.Solver.SAT.Implementation (
     satSolver,
 ) where
 
+import Optics.Core
+import Optics.State.Operators
+import Control.Monad.Trans.State
+
+import qualified Data.Map.Strict as Map
+
 import Distribution.Solver.SAT.Base
 import Distribution.Solver.SAT.DependencyInfo
 import Distribution.Solver.SAT.Solver
@@ -14,10 +20,29 @@ satSolver platform compilerInfo installedIndex sourceIndex _pkgConfigDb _prefere
     withFile sourceIndex.location ReadMode $ \sourceIndexHdl -> do
         runSAT $ do
 
-            forM_ targets $ \targetPkgName -> do
-                liftIO $ print targetPkgName
-                let targetVersions = lookupSourcePackage targetPkgName sourceIndex
-                liftIO $ print targetVersions
+            -- initial model with targets.
+            model <- flip execStateT emptyModel $ do 
+                forM_ targets $ \targetPkgName -> do
+                    liftIO $ printf "Target package: %s\n" (prettyShow targetPkgName)
+                    let targetVersions = lookupSourcePackage targetPkgName sourceIndex
+
+                    -- library literal
+                    libLit <- lift newLit
+
+                    -- version literals
+                    verLits <- forM targetVersions $ \_ -> lift newLit
+
+                    lift $ addClause [libLit]
+                    lift $ addClause (toList verLits)
+
+                    #packages % at targetPkgName ?= MkModelPackage
+                        { libraries = Map.singleton LMainLibName libLit
+                        , versions  = fmap ShallowVersion verLits
+                        }
+
+            modelB <- solve model
+
+            liftIO $ print modelB
 
             return []
 
@@ -25,7 +50,10 @@ satSolver platform compilerInfo installedIndex sourceIndex _pkgConfigDb _prefere
 data Model a = MkModel
     { packages :: Map PackageName (ModelPackage a)
     }
-  deriving (Show, Functor, Foldable, Traversable)
+  deriving (Show, Generic, Functor, Foldable, Traversable)
+
+emptyModel :: Model a
+emptyModel = MkModel Map.empty
 
 data ModelPackage a = MkModelPackage
     { libraries :: !(Map LibraryName a)  -- ^ requested libraries.
