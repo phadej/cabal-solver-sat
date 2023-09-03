@@ -88,7 +88,7 @@ satSolver platform compilerInfo installedIndex sourceIndex _pkgConfigDb _prefere
 
         liftIO $ printBriefModel modelB'.model
 
-        if modelB'.expanded && iteration < 6
+        if modelB'.expanded && iteration < 10
         then loop (iteration + 1) sourceIndexHdl model' modelB'
         else return modelB'.model
 
@@ -159,8 +159,8 @@ printBriefModel m = ifor_ m.packages $ \pn pkg -> do
     printf "package %s\n" (prettyShow pn)
     printf "- components: %s\n" $ unwords
         [ show ln | (ln, True) <- Map.toList pkg.libraries ]
-    printf "- versions: %s\n" $ unwords $ concat
-        [ [prettyShow ver, f x] | (ver, x) <- Map.toList pkg.versions, x.value ]
+    printf "- versions: %s\n" $ unwords
+        [ prettyShow ver ++ if x.value then "!" else "" | (ver, x) <- Map.toList pkg.versions ]
   where
     f ShallowVersion{} = "shallow"
     f DeepVersion {}   = "expanded"
