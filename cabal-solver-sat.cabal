@@ -60,3 +60,4 @@ library
     , sat-simple             ^>=0.1.0.0
     , tar                    ^>=0.5.1.1
     , transformers           ^>=0.5.6.2
+    , semialign

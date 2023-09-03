@@ -2,6 +2,7 @@ module Distribution.Solver.SAT.Installed (
     InstalledPackage (..),
     InstalledPackageIndex,
     mkInstalledPackageIndex,
+    installedPackageIndexUnits,
 ) where
 
 import Distribution.Solver.SAT.Base
@@ -36,3 +37,6 @@ mkInstalledPackageIndex pkgs = MkInstalledPackageIndex {..} where
         [ (pkg.name, Map.singleton pkg.version [pkg])
         | pkg <- pkgs
         ]
+
+installedPackageIndexUnits :: InstalledPackageIndex -> Map UnitId InstalledPackage
+installedPackageIndexUnits ipi = ipi.units

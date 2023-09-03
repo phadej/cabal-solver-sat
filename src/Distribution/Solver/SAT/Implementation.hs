@@ -4,13 +4,14 @@ module Distribution.Solver.SAT.Implementation (
 
 import Control.Monad.Trans.State
 import Optics.Core
-import Optics.State.Operators
 import Optics.State
+import Optics.State.Operators
 
 import qualified Data.Map.Strict as Map
 
 import Distribution.Solver.SAT.Base
 import Distribution.Solver.SAT.DependencyInfo
+import Distribution.Solver.SAT.Installed
 import Distribution.Solver.SAT.Solver
 import Distribution.Solver.SAT.Sources
 
@@ -23,8 +24,15 @@ satSolver platform compilerInfo installedIndex sourceIndex _pkgConfigDb _prefere
 
             -- create initial model
             model <- flip execStateT emptyS $ do
-                -- add packages in installed index
-                -- TODO
+                forM_  (installedPackageIndexUnits installedIndex) $ \ip -> do
+                    liftIO $ printf "Installed package: %s\n" (prettyShow ip.id)
+                    l <- lift newLit
+                    v <- lift newLit
+                    #model % #packages % at ip.name ?= MkModelPackage
+                        { libraries = Map.singleton LMainLibName l
+                        , versions  = Map.singleton ip.version $
+                            DeepVersion v Map.empty emptyDependencyInfo
+                        }
 
                 -- add target packages
                 forM_ targets $ \targetPkgName -> do
@@ -38,13 +46,28 @@ satSolver platform compilerInfo installedIndex sourceIndex _pkgConfigDb _prefere
 
             liftIO $ print modelB
 
-            ifor_ modelB.model.packages $ \pn pkg -> when (or pkg.libraries) $ do
+            model1 <- flip execStateT model $
+                ifor_ modelB.model.packages $ \pn pkg -> when (or pkg.libraries) $
                 ifor_ pkg.versions $ \ver def -> case def of
                     ShallowVersion True -> do
-                        liftIO $ printf "Selected unexpanded %s\n" (prettyShow (PackageIdentifier pn ver))
+                        verLit <- getVersionLiteral pn ver
+
+                        liftIO $ printf "Expanding selected %s (literal %s)\n" (prettyShow (PackageIdentifier pn ver)) (show verLit)
                         gpd <- liftIO $ readSourcePackage sourceIndexHdl pn ver sourceIndex
                         let di = mkDependencyInfo platform compilerInfo gpd
-                        liftIO $ print di
+
+                        aflags <- forM di.autoFlags $ \_ -> lift newLit
+                        liftIO $ print aflags
+
+                        ifor_ di.libraries $ \ln depends -> do
+                            lnLit <- getComponentLiteral pn ver ln
+                            liftIO $ printf "Component %s %s literal %s\n" (prettyShow (PackageIdentifier pn ver)) (show ln) (show lnLit)
+
+                            liftIO $ print depends
+                            expandCondTree sourceIndex aflags depends
+
+                        #model % #packages % ix pn % #versions % ix ver .=
+                            DeepVersion verLit aflags di
 
                     _ -> return ()
 
@@ -83,7 +106,7 @@ data ModelPackage a = MkModelPackage
     { libraries :: !(Map LibraryName a)  -- ^ requested libraries.
     , versions  :: !(Map Version (ModelPackageInfo a))
     }
-  deriving (Show, Functor, Foldable, Traversable)
+  deriving (Show, Generic, Functor, Foldable, Traversable)
 
 data ModelPackageInfo a
     = ShallowVersion a
@@ -93,6 +116,8 @@ data ModelPackageInfo a
       -- ^ the version has been selected, so we expanded it further.
       --
       -- The members are selection literal, automatic flag assignment and dependency map.
+
+    -- TODO: add constructor for installed packages
   deriving (Show, Functor, Foldable, Traversable)
 
 -------------------------------------------------------------------------------
@@ -126,3 +151,16 @@ packageVersions sourceIndex pn components = do
                 }
 
             return (fmap snd compLits, verLits)
+
+getVersionLiteral :: PackageName -> Version -> MonadSolver s (Lit s)
+getVersionLiteral pn ver = do
+    -- TODO:
+    lift $ addDefinition false
+
+getComponentLiteral :: PackageName -> Version -> LibraryName -> MonadSolver s (Lit s)
+getComponentLiteral pn ver ln = do
+    -- TODO:
+    lift $ addDefinition false
+
+expandCondTree :: SourcePackageIndex -> Map FlagName (Lit s) -> CondTree FlagName () DependencyMap -> MonadSolver s ()
+expandCondTree _ _ _ = return ()
