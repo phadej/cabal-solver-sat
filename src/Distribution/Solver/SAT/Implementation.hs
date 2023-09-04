@@ -10,6 +10,7 @@ import Optics.State.Operators    ((.=), (?=))
 import qualified Data.Map.Strict as Map
 
 import Distribution.Solver.SAT.Base
+import Distribution.Solver.SAT.Config
 import Distribution.Solver.SAT.DependencyInfo
 import Distribution.Solver.SAT.Installed
 import Distribution.Solver.SAT.Solver
@@ -17,8 +18,8 @@ import Distribution.Solver.SAT.Sources
 
 import Control.Monad.SAT
 
-satSolver :: DependencyResolver
-satSolver platform compilerInfo installedIndex sourceIndex _pkgConfigDb _preferences _constraints targets = do
+satSolver :: Config -> DependencyResolver
+satSolver _cfg platform compilerInfo installedIndex sourceIndex _pkgConfigDb _preferences _constraints targets = do
     withFile sourceIndex.location ReadMode $ \sourceIndexHdl -> do
         runSAT $ do
             -- create initial model

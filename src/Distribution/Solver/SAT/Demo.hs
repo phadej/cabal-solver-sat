@@ -92,6 +92,7 @@ demo cabalFile = do
     printf "SourcePackageIndex size: %d\n" (Map.size demoSourcePackageIndex.packages)
 
     satSolver
+        MkConfig
         demoPlatform
         demoCompilerInfo
         demoInstalledPackageIndex
