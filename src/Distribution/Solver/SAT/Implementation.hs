@@ -88,7 +88,7 @@ satSolver platform compilerInfo installedIndex sourceIndex _pkgConfigDb _prefere
 
         liftIO $ printBriefModel modelB'.model
 
-        if modelB'.expanded && iteration < 20
+        if modelB'.expanded && iteration < 50
         then loop (iteration + 1) sourceIndexHdl model' modelB'
         else return modelB'.model
 
@@ -159,14 +159,14 @@ printBriefModel m = ifor_ m.packages $ \pn pkg -> do
     putStrLn $ unwords $
         [ bold (prettyShow pn) ] ++
         [ prettyLibraryName ln | (ln, True) <- Map.toList pkg.libraries ] ++
-        [ if | x.value   -> bold (prettyShow ver) ++ "!"
-             | f x       -> blue (prettyShow ver)
-             | otherwise -> prettyShow ver
+        [ case x of
+            ShallowVersion x'            -> if x' then bold (blue (prettyShow ver)) else blue (prettyShow ver)
+            DeepVersion    x' aflags _di -> if x' then bold (prettyShow ver) ++ "(" ++ showFlags aflags ++ ")" else prettyShow ver
         | (ver, x) <- Map.toList pkg.versions
         ]
-  where
-    f ShallowVersion{} = True
-    f DeepVersion {}   = False
+
+showFlags :: Map FlagName Bool -> String
+showFlags m = unwords [ (if v then '+' else '-') : prettyShow fn | (fn, v) <- Map.toList m ]
 
 -------------------------------------------------------------------------------
 -- Operations
@@ -186,7 +186,7 @@ getPackageVersion_ sourceIndex pn = do
     verLits <- forM targetVersions $ \_ -> lift newLit
 
     -- TODO: configurable reverse
-    lift $ assertAtMostOne (toList verLits)
+    lift $ assertAtMostOne $ reverse $ toList verLits
 
     return verLits
 
@@ -214,6 +214,7 @@ getComponentLiterals sourceIndex pn lns = do
                 Nothing -> do
                     l <- lift newLit
                     #model % #packages % ix pn % #libraries % at ln ?= l
+                    -- TODO: traverse through existing versions, and if they are expanded and don't have the component set it to false.
                     return l
 
             return (compLits, fmap (.value) pkg.versions)
@@ -235,7 +236,7 @@ expandCondTree
     -> Map FlagName (Lit s)                   -- ^ automatic flags
     -> CondTree FlagName () DependencyMap     -- ^ dependency info tree
     -> MonadSolver s ()
-expandCondTree sourceIndex srcCompLit srcVerLit _aflags = go [] where
+expandCondTree sourceIndex srcCompLit srcVerLit aflags = go [] where
     go :: [Lit s] -> CondTree FlagName () DependencyMap -> MonadSolver s ()
     go conds (CondNode dm () bs) = do
         forM_ (fromDepMap dm) $ \(Dependency pn vr lns) -> do
@@ -261,5 +262,17 @@ expandCondTree sourceIndex srcCompLit srcVerLit _aflags = go [] where
             -- at least one has to be selected.
             assertImplication (srcCompLit : srcVerLit : conds) verLits'
 
-        -- unless (null bs) $ liftIO $ fail "autoflags TODO"
+        forM_ bs $ \(CondBranch c t mf) -> do
+            c' <- lift $ addDefinition (conditionToProp c)
+            go (c':conds) t
+            forM_ mf $ go (neg c':conds)
 
+    conditionToProp :: Condition FlagName -> Prop s
+    conditionToProp (Var f) = case Map.lookup f aflags of
+        Nothing -> false
+        Just l  -> lit l
+    conditionToProp (Lit True) = true
+    conditionToProp (Lit False) = false
+    conditionToProp (CNot c)    = neg (conditionToProp c)
+    conditionToProp (COr x y)   = conditionToProp x \/ conditionToProp y
+    conditionToProp (CAnd x y)  = conditionToProp x /\ conditionToProp y

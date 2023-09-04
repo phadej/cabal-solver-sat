@@ -29,9 +29,9 @@ import System.IO                 as X (Handle, IOMode (..), withFile)
 import Text.Printf               as X (printf)
 
 import Distribution.PackageDescription as X
-       (CondBranch (..), CondTree (..), Dependency (..), FlagAssignment,
-       FlagName, GenericPackageDescription (..), LibraryName (..),
-       PackageIdentifier (..), PackageName, mkPackageName)
+       (CondBranch (..), CondTree (..), Condition (..), Dependency (..),
+       FlagAssignment, FlagName, GenericPackageDescription (..),
+       LibraryName (..), PackageIdentifier (..), PackageName, mkPackageName)
 
 import Distribution.Types.DependencyMap as X
        (DependencyMap, fromDepMap, toDepMap)
