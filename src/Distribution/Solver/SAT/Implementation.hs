@@ -31,8 +31,7 @@ satSolver cfg platform compilerInfo installedIndex sourceIndex _pkgConfigDb _pre
                     v <- lift newLit
                     #model % #packages % at ip.name ?= MkModelPackage
                         { libraries = Map.singleton LMainLibName l
-                        , versions  = Map.singleton ip.version $
-                            InstalledVersion v ip
+                        , versions  = Map.singleton ip.version $ InstalledVersion v ip
                         }
 
                 -- add target packages
