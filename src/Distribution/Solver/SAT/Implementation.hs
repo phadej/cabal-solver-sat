@@ -52,11 +52,15 @@ satSolver cfg platform compilerInfo installedIndex sourceIndex _pkgConfigDb _pre
 
             liftIO $ printModel modelB.model
 
-            loop 1 sourceIndexHdl model modelB
+            (_, modelC) <- loop 1 sourceIndexHdl model modelB
+
+            liftIO $ print $ modelVersions modelC
+
+            return modelC
 
         return $ convertModel model
   where
-    loop :: Int -> Handle -> S (Lit s) -> S Bool -> SAT s (Model Bool)
+    loop :: Int -> Handle -> S (Lit s) -> S Bool -> SAT s (Model (Lit s), Model Bool)
     loop iteration sourceIndexHdl model modelB = do
         liftIO $ putStrLn "--------------------------------------------------"
         liftIO $ printf "Iteration %d\n" iteration
@@ -92,7 +96,7 @@ satSolver cfg platform compilerInfo installedIndex sourceIndex _pkgConfigDb _pre
 
         if modelB'.expanded && iteration < cfg.maxIterations
         then loop (iteration + 1) sourceIndexHdl model' modelB'
-        else return modelB'.model
+        else return (model'.model, modelB'.model)
 
 -------------------------------------------------------------------------------
 -- Model data definitions
@@ -166,6 +170,17 @@ showFlags m = unwords [ (if v then '+' else '-') : prettyShow fn | (fn, v) <- Ma
 -- Result construction
 -------------------------------------------------------------------------------
 
+-- | Convert model to package name -> version map.
+-- This is used for improving the solution.
+modelVersions :: Model Bool -> Map PackageName Version
+modelVersions m = Map.fromList
+    [ (pn, ver)
+    | (pn, pkg) <- Map.toList m.packages
+    , (ver, x)  <- Map.toList pkg.versions
+    , x.value
+    ]
+
+-- | Convert model to the final result.
 convertModel :: Model Bool -> [ResolvedPackage]
 convertModel m = concat
     [ case x of
