@@ -1,7 +1,6 @@
 module Distribution.Solver.SAT.DependencyInfo (
     DependencyInfo (..),
     mkDependencyInfo,
-    emptyDependencyInfo,
 ) where
 
 import Distribution.Solver.SAT.Base
@@ -9,7 +8,6 @@ import Distribution.Solver.SAT.Base
 import qualified Distribution.Compiler           as C
 import qualified Distribution.PackageDescription as C
 import qualified Distribution.System             as C
-import           Distribution.Version
 
 import qualified Data.Map as Map
 
@@ -19,14 +17,6 @@ data DependencyInfo = MkDependencyInfo
     , libraries   :: !(Map LibraryName (CondTree FlagName () DependencyMap))
     }
   deriving Show
-
--- TODO: remove me
-emptyDependencyInfo :: DependencyInfo
-emptyDependencyInfo = MkDependencyInfo
-    { manualFlags = Map.empty
-    , autoFlags   = Map.empty
-    , libraries   = Map.singleton LMainLibName mempty
-    }
 
 mkDependencyInfo :: C.Platform -> C.CompilerInfo -> GenericPackageDescription -> DependencyInfo
 mkDependencyInfo platform compilerInfo gpd = MkDependencyInfo

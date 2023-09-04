@@ -3,6 +3,7 @@ module Distribution.Solver.SAT.Demo (
     demo,
     demoThis,
     -- * Demo inputs
+    demoConfig,
     demoInstalledPackageIndex,
     demoPlatform,
     demoCompilerInfo,
@@ -24,6 +25,15 @@ import qualified Data.Set                        as Set
 import qualified Distribution.Compiler           as C
 import qualified Distribution.PackageDescription as C
 import qualified Distribution.System             as C
+
+-- | Demo configuration.
+demoConfig :: Config
+demoConfig = MkConfig
+    { maxIterations = 50
+    , reverse       = True
+    , improve       = True
+    , printStats    = True
+    }
 
 -- | Installed package index with @base-4.17.1.0@
 demoInstalledPackageIndex :: InstalledPackageIndex
@@ -92,7 +102,7 @@ demo cabalFile = do
     printf "SourcePackageIndex size: %d\n" (Map.size demoSourcePackageIndex.packages)
 
     satSolver
-        MkConfig
+        demoConfig
         demoPlatform
         demoCompilerInfo
         demoInstalledPackageIndex
@@ -105,9 +115,17 @@ demo cabalFile = do
 demoThis :: IO ()
 demoThis = do
     resolved <- demo "cabal-solver-sat.cabal"
+
+    putStrLn "--------------------------------------------------"
+    putStrLn "Solution"
+    putStrLn "--------------------------------------------------"
+
     forM_ resolved $ \case
-        Preinstalled ip -> print ip
-        FromSource pi lns flags -> print (pi, lns, flags)
+        Preinstalled ip -> putStrLn $ green $ prettyShow ip.id
+        FromSource pi lns flags -> putStrLn $ unwords $
+            [ prettyShow pi ] ++
+            [ prettyLibraryName ln | ln <- toList lns ] ++ 
+            [ prettyShow flags ]
 
 mkSourcePackages :: CI.PackageInfo -> Map Version SourcePackage
 mkSourcePackages = Map.map mkSourcePackage . CI.piVersions

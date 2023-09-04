@@ -1,7 +1,7 @@
 module Distribution.Solver.SAT.Base (
     module X,
     prettyLibraryName,
-    bold, blue,
+    bold, blue, green,
 ) where
 
 import Codec.Archive.Tar.Index   as X (TarEntryOffset)
@@ -18,6 +18,7 @@ import Data.Maybe                as X (catMaybes, fromMaybe)
 import Data.Set                  as X (Set)
 import Data.Void                 as X (Void)
 import Distribution.Package      as X (packageName, packageVersion)
+import Data.List.NonEmpty as X (NonEmpty (..), nonEmpty)
 import Distribution.Pretty       as X (prettyShow)
 import Distribution.Types.UnitId as X (UnitId, mkUnitId)
 import Distribution.Version      as X
@@ -31,7 +32,7 @@ import Text.Printf               as X (printf)
 import Distribution.PackageDescription as X
        (CondBranch (..), CondTree (..), Condition (..), Dependency (..),
        FlagAssignment, FlagName, GenericPackageDescription (..),
-       LibraryName (..), PackageIdentifier (..), PackageName, mkPackageName)
+       LibraryName (..), PackageIdentifier (..), PackageName, mkFlagAssignment, mkPackageName)
 
 import Distribution.Types.DependencyMap as X
        (DependencyMap, fromDepMap, toDepMap)
@@ -47,3 +48,6 @@ bold str = ANSI.setSGRCode [ANSI.SetConsoleIntensity ANSI.BoldIntensity] ++ str 
 
 blue :: String -> String
 blue str = ANSI.setSGRCode [ANSI.SetColor ANSI.Foreground ANSI.Dull ANSI.Blue] ++ str ++ ANSI.setSGRCode []
+
+green :: String -> String
+green str = ANSI.setSGRCode [ANSI.SetColor ANSI.Foreground ANSI.Dull ANSI.Green] ++ str ++ ANSI.setSGRCode []

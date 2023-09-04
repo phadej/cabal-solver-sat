@@ -2,7 +2,12 @@ module Distribution.Solver.SAT.Config (
     Config (..),
 ) where
 
+import Distribution.Solver.SAT.Base
+
 data Config = MkConfig
-    -- TODO: reverse
-    -- TODO: improve
-    -- TODO: iteration count
+    { maxIterations :: !Int
+    , reverse       :: !Bool
+    , improve       :: !Bool
+    , printStats    :: !Bool
+    }
+  deriving Show
