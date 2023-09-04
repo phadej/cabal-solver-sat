@@ -23,6 +23,7 @@ common language
     DeriveTraversable
     GADTs
     LambdaCase
+    MultiWayIf
     OverloadedLabels
     OverloadedRecordDot
     PatternSynonyms
@@ -39,6 +40,7 @@ library
   exposed-modules:
     Distribution.Solver.SAT
     Distribution.Solver.SAT.Base
+    Distribution.Solver.SAT.Config
     Distribution.Solver.SAT.Constraints
     Distribution.Solver.SAT.DependencyInfo
     Distribution.Solver.SAT.Implementation
@@ -49,6 +51,7 @@ library
     Distribution.Solver.SAT.Sources
 
   build-depends:
+    , ansi-terminal          ^>=1.0
     , base                   >=4.17      && <4.19
     , bytestring             ^>=0.11.4.0
     , cabal-install-parsers  ^>=0.6.1
@@ -60,5 +63,3 @@ library
     , sat-simple             ^>=0.1.0.0
     , tar                    ^>=0.5.1.1
     , transformers           ^>=0.5.6.2
-    , semialign
-    , text

@@ -1,4 +1,8 @@
-module Distribution.Solver.SAT.Base (module X) where
+module Distribution.Solver.SAT.Base (
+    module X,
+    prettyLibraryName,
+    bold, blue,
+) where
 
 import Codec.Archive.Tar.Index   as X (TarEntryOffset)
 import Control.Monad             as X (forM, forM_, unless, when)
@@ -31,3 +35,15 @@ import Distribution.PackageDescription as X
 
 import Distribution.Types.DependencyMap as X
        (DependencyMap, fromDepMap, toDepMap)
+
+import qualified System.Console.ANSI as ANSI
+
+prettyLibraryName :: LibraryName -> String
+prettyLibraryName LMainLibName = "lib"
+prettyLibraryName (LSubLibName c) = "lib:" ++ prettyShow c
+
+bold :: String -> String
+bold str = ANSI.setSGRCode [ANSI.SetConsoleIntensity ANSI.BoldIntensity] ++ str ++ ANSI.setSGRCode []
+
+blue :: String -> String
+blue str = ANSI.setSGRCode [ANSI.SetColor ANSI.Foreground ANSI.Dull ANSI.Blue] ++ str ++ ANSI.setSGRCode []

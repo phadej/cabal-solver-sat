@@ -2,10 +2,10 @@ module Distribution.Solver.SAT.Implementation (
     satSolver,
 ) where
 
-import Control.Monad.Trans.State
-import Optics.Core
-import Optics.State
-import Optics.State.Operators
+import Control.Monad.Trans.State (StateT, execStateT)
+import Optics.Core               (at, ix, (%), (.~))
+import Optics.State              (use)
+import Optics.State.Operators    ((.=), (?=))
 
 import qualified Data.Map.Strict as Map
 
@@ -42,10 +42,10 @@ satSolver platform compilerInfo installedIndex sourceIndex _pkgConfigDb _prefere
 
                     -- require library component to be available.
                     lift $ addClause [libLit]
-                    
+
                     -- require at least one version to be available
                     lift $ assertAtLeastOne (toList verLits)
-                    
+
             modelB <- solve model
 
             liftIO $ printModel modelB.model
@@ -156,14 +156,17 @@ printModel m = ifor_ m.packages $ \pn pkg -> do
 
 printBriefModel :: Model Bool -> IO ()
 printBriefModel m = ifor_ m.packages $ \pn pkg -> do
-    printf "package %s\n" (prettyShow pn)
-    printf "- components: %s\n" $ unwords
-        [ show ln | (ln, True) <- Map.toList pkg.libraries ]
-    printf "- versions: %s\n" $ unwords
-        [ prettyShow ver ++ if x.value then "!" else "" | (ver, x) <- Map.toList pkg.versions ]
+    putStrLn $ unwords $
+        [ bold (prettyShow pn) ] ++
+        [ prettyLibraryName ln | (ln, True) <- Map.toList pkg.libraries ] ++
+        [ if | x.value   -> bold (prettyShow ver) ++ "!"
+             | f x       -> blue (prettyShow ver)
+             | otherwise -> prettyShow ver
+        | (ver, x) <- Map.toList pkg.versions
+        ]
   where
-    f ShallowVersion{} = "shallow"
-    f DeepVersion {}   = "expanded"
+    f ShallowVersion{} = True
+    f DeepVersion {}   = False
 
 -------------------------------------------------------------------------------
 -- Operations
@@ -180,8 +183,9 @@ getPackageVersion_ :: SourcePackageIndex -> PackageName -> MonadSolver s (Map Ve
 getPackageVersion_ sourceIndex pn = do
     let targetVersions = lookupSourcePackage pn sourceIndex
 
-    verLits  <- forM targetVersions $ \_ -> lift newLit
+    verLits <- forM targetVersions $ \_ -> lift newLit
 
+    -- TODO: configurable reverse
     lift $ assertAtMostOne (toList verLits)
 
     return verLits
@@ -195,8 +199,12 @@ getVersionLiteral pn ver = do
             Nothing -> liftIO $ fail "inconsistency two?"
             Just pi -> return pi.value
 
--- TODO: return version literals as well
-getComponentLiterals :: Traversable t => SourcePackageIndex -> PackageName -> t LibraryName -> MonadSolver s (t (Lit s), Map Version (Lit s))
+getComponentLiterals
+    :: Traversable t
+    => SourcePackageIndex
+    -> PackageName
+    -> t LibraryName
+    -> MonadSolver s (t (Lit s), Map Version (Lit s))
 getComponentLiterals sourceIndex pn lns = do
     mv <- use (#model % #packages % at pn)
     case mv of
@@ -237,7 +245,7 @@ expandCondTree sourceIndex srcCompLit srcVerLit _aflags = go [] where
 
             when (null verLits) $ do
                 liftIO $ printf "dependency on package without any available versions: %s -> %s\n" "foo" (prettyShow pn)
-            
+
             let verLits' :: [Lit s]
                 verLits' =
                     [ l

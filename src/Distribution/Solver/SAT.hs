@@ -2,6 +2,7 @@ module Distribution.Solver.SAT (
     module X,
 ) where
 
+import Distribution.Solver.SAT.Config         as X
 import Distribution.Solver.SAT.Constraints    as X
 import Distribution.Solver.SAT.Implementation as X
 import Distribution.Solver.SAT.Installed      as X
