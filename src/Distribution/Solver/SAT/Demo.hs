@@ -31,7 +31,7 @@ demoConfig :: Config
 demoConfig = MkConfig
     { maxIterations = 50
     , reverse       = True
-    , improve       = True
+    , improve       = 10
     , printStats    = True
     }
 
@@ -39,9 +39,11 @@ demoConfig = MkConfig
 demoInstalledPackageIndex :: InstalledPackageIndex
 demoInstalledPackageIndex = mkInstalledPackageIndex
     [ mk "base"               [4,17,1,0]
+    , mk "ghc-bignum"         [1,3]
     , mk "ghc-prim"           [0,9,1]
-    , mk "template-haskell"   [2,19,0,0]
+    , mk "integer-gmp"        [1,1]
     , mk "system-cxx-std-lib" [1,0]
+    , mk "template-haskell"   [2,19,0,0]
 
     , mk "sat-simple" [0,1,0,0]
     ]
@@ -92,6 +94,8 @@ demo cabalFile = do
             -- These are hardcoded in cabal-install as well.
             & Map.delete (mkPackageName "ghc")
             & Map.delete (mkPackageName "ghc-prim")
+            & Map.delete (mkPackageName "ghc-bignum")
+            & Map.delete (mkPackageName "integer-gmp")
             & Map.delete (mkPackageName "base")
             & Map.delete (mkPackageName "template-haskell")
 

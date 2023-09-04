@@ -2,13 +2,13 @@ module Distribution.Solver.SAT.Implementation (
     satSolver,
 ) where
 
-import Control.Monad.Trans.State (StateT, execStateT)
-import Optics.Core               (at, ix, (%), (.~))
+import Control.Monad.Trans.State (StateT, execStateT, evalStateT)
+import Optics.Core               (at, ix, (%), (.~), (^?))
 import Optics.State              (use)
 import Optics.State.Operators    ((.=), (?=))
 
 import qualified Data.Map.Strict as Map
-import qualified Data.Set as Set
+import qualified Data.Set        as Set
 
 import Distribution.Solver.SAT.Base
 import Distribution.Solver.SAT.Config
@@ -51,11 +51,27 @@ satSolver cfg platform compilerInfo installedIndex sourceIndex _pkgConfigDb _pre
 
             liftIO $ printModel modelB.model
 
-            (_, modelC) <- loop 1 sourceIndexHdl model modelB
+            (model', modelC) <- loop 1 sourceIndexHdl model modelB
 
-            liftIO $ print $ modelVersions modelC
+            -- if cfg.improve
+            ifor_ (modelVersions modelC) $ \pn ver -> do
+                forM_ (model' ^? #packages % ix pn % #versions) $ \vers -> do
+                    ifor_ vers $ \ver' x -> do
+                        when (ver' < ver) $ do
+                            addClause [neg x.value]
 
-            return modelC
+            lits <- flip evalStateT (MkS False model') $ forM (Map.toList $ modelVersions modelC) $ \(pn, ver) -> do
+                getVersionLiteral pn ver
+            addClause $ map neg lits
+
+            modelD <- solve model'
+            (_, modelE) <- loop 30 sourceIndexHdl (MkS False model') (MkS False modelD)
+
+            ifor_ (Map.intersectionWith (,) (modelVersions modelC) (modelVersions modelE)) $ \pn (a, b) -> do
+                unless (a == b) $ do
+                    liftIO $ putStrLn $ unwords [prettyShow pn, prettyShow a, prettyShow b]
+
+            return modelE
 
         return $ convertModel model
   where

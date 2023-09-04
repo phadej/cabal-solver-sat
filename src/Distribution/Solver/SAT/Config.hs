@@ -7,7 +7,7 @@ import Distribution.Solver.SAT.Base
 data Config = MkConfig
     { maxIterations :: !Int
     , reverse       :: !Bool
-    , improve       :: !Bool
+    , improve       :: !Int
     , printStats    :: !Bool
     }
   deriving Show
