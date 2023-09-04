@@ -164,7 +164,7 @@ printModel m = ifor_ m.packages $ \pn pkg -> do
         ]
 
 showFlags :: Map FlagName Bool -> String
-showFlags m = unwords [ (if v then '+' else '-') : prettyShow fn | (fn, v) <- Map.toList m ]
+showFlags m = prettyShow $ mkFlagAssignment $ Map.toList m
 
 -------------------------------------------------------------------------------
 -- Result construction
