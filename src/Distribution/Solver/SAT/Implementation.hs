@@ -356,6 +356,7 @@ expandCondTree cfg sourceIndex pi ln srcCompLit srcVerLit aflags = go [] where
                     , v `withinRange` vr
                     ]
 
+            -- if there are no versions matching the range, print a warning
             when (null verLits') $ do
                 liftIO $ putStrLn $ magenta $ printf "dependency on package without any available versions: %s %s -> %s %s" (prettyShow pi) (prettyLibraryName ln) (prettyShow pn) (prettyShow vr)
 
