@@ -81,7 +81,18 @@ satSolver cfg platform compilerInfo installedIndex sourceIndex _pkgConfigDb _pre
             (model', modelC) <- loop stats sourceIndexHdl model modelB
             liftIO $ writeIORef solutionRef $ Just modelC
 
-            -- if cfg.improve
+            if cfg.improve > 0
+            then do
+                (_, modelE) <- improve solutionRef stats sourceIndexHdl model' modelC
+                return modelE
+            else do
+              return modelC
+
+        return $ convertModel model
+  where
+    improve :: IORef (Maybe (Model Bool)) -> Stats -> Handle -> Model (Lit s) -> Model Bool -> SAT s (Model (Lit s), Model Bool)
+    improve solutionRef stats sourceIndexHdl model' modelC = do
+            printSection "Improve round"
             ifor_ (modelVersions modelC) $ \pn ver -> do
                 forM_ (model' ^? #packages % ix pn % #versions) $ \vers -> do
                     ifor_ vers $ \ver' x -> do
@@ -93,16 +104,15 @@ satSolver cfg platform compilerInfo installedIndex sourceIndex _pkgConfigDb _pre
             addClause $ map neg lits
 
             modelD <- solve model'
-            (_, modelE) <- loop stats sourceIndexHdl model' modelD
+            (model'', modelE) <- loop stats sourceIndexHdl model' modelD
 
+            printSection "Improve differences"
             ifor_ (Map.intersectionWith (,) (modelVersions modelC) (modelVersions modelE)) $ \pn (a, b) -> do
                 unless (a == b) $ do
                     liftIO $ putStrLn $ unwords [prettyShow pn, prettyShow a, prettyShow b]
 
-            return modelE
+            improve solutionRef stats sourceIndexHdl model'' modelE
 
-        return $ convertModel model
-  where
     loop :: Stats -> Handle -> Model (Lit s) -> Model Bool -> SAT s (Model (Lit s), Model Bool)
     loop stats sourceIndexHdl model modelB = do
         iteration <- liftIO $ readIORef stats.iteration
