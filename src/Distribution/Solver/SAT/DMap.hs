@@ -3,9 +3,7 @@ module Distribution.Solver.SAT.DMap where
 
 import Distribution.Solver.SAT.Base
 
-import Data.Kind (Type)
-import Data.GADT.Compare (GCompare, GOrdering(..), gcompare)
-import Data.Some (Some, mkSome, withSome)
+import Data.Some (mkSome, withSome)
 
 -- |Dependent maps: 'k' is a GADT-like thing with a facility for
 -- rediscovering its type parameter, elements of which function as identifiers
@@ -380,3 +378,46 @@ filterLt cmp = go
           LT -> go l
           GT -> combine kx x l (go r)
           EQ -> l
+
+-------------------------------------------------------------------------------
+-- Extras
+-------------------------------------------------------------------------------
+
+-- | /O(n)/. Post-order fold.  The function will be applied from the lowest
+-- value to the highest.
+foldrWithKey :: (forall v. k v -> f v a -> b -> b) -> b -> DMap k f a -> b
+foldrWithKey f = go
+  where
+    go z Tip              = z
+    go z (Bin _ kx x l r) = go (f kx x (go z r)) l
+
+-- | /O(n)/. Convert to an ascending list.
+toList :: DMap k f a -> [DSum k f a]
+toList t = foldrWithKey (\k x xs -> (k :**: x) : xs) [] t
+
+insert :: forall k f v a. GCompare k => k v -> f v a -> DMap k f a -> DMap k f a
+insert kx x = kx `seq` go
+    where
+        go :: DMap k f a -> DMap k f a
+        go Tip = singleton kx x
+        go t@(Bin sz ky y l r) = case gcompare kx ky of
+            GLT -> let !l' = go l
+                   in if l' `ptrEq` l
+                      then t
+                      else balance ky y l' r
+            GGT -> let !r' = go r
+                   in if r' `ptrEq` r
+                      then t
+                      else balance ky y l r'
+            GEQ
+              | kx `ptrEq` ky && x `ptrEq` y -> t
+              | otherwise -> Bin sz kx x l r
+
+ptrEq :: a -> a -> Bool
+ptrEq _ _ = False
+
+fromList :: GCompare k => [DSum k f a] -> DMap k f a
+fromList xs = foldl' ins empty xs
+  where
+    ins :: GCompare k => DMap k f a -> DSum k f a -> DMap k f a
+    ins t (k :**: x) = insert k x t

@@ -8,15 +8,20 @@ import Control.Monad             as X (forM, forM_, unless, when)
 import Control.Monad.IO.Class    as X (MonadIO (..))
 import Control.Monad.Trans.Class as X (MonadTrans (..))
 import Data.Either               as X (partitionEithers)
-import Data.Foldable             as X (foldl', toList)
+import Data.EqP                  as X (EqP (..))
+import Data.Foldable             as X (foldl', for_, toList)
 import Data.Foldable.WithIndex   as X (ifor_)
 import Data.Function             as X ((&))
 import Data.Functor.Identity     as X (Identity (..))
+import Data.GADT.Compare         as X (GCompare (..), GEq (..), GOrdering (..))
+import Data.Kind                 as X (Type)
 import Data.List                 as X (sortOn)
 import Data.List.NonEmpty        as X (NonEmpty (..), nonEmpty)
 import Data.Map                  as X (Map)
 import Data.Maybe                as X (catMaybes, fromMaybe)
 import Data.Set                  as X (Set)
+import Data.Some                 as X (Some (..))
+import Data.Type.Equality        as X ((:~:) (..))
 import Data.Void                 as X (Void)
 import Distribution.Package      as X (packageName, packageVersion)
 import Distribution.Pretty       as X (prettyShow)
@@ -29,8 +34,8 @@ import System.IO                 as X (Handle, IOMode (..), withFile)
 import Text.Printf               as X (printf)
 
 import Distribution.PackageDescription as X
-       (ComponentName (..), CondBranch (..), CondTree (..), Condition (..), Dependency (..), FlagAssignment, FlagName, GenericPackageDescription (..),
-       LibraryName (..), PackageIdentifier (..), PackageName, mkFlagAssignment, mkPackageName)
+       (ComponentName (..), CondBranch (..), CondTree (..), Condition (..), Dependency (..), FlagAssignment, FlagName,
+       GenericPackageDescription (..), LibraryName (..), PackageIdentifier (..), PackageName, mkFlagAssignment, mkPackageName)
 
 import Distribution.Types.DependencyMap as X (DependencyMap, fromDepMap, toDepMap)
 

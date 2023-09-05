@@ -2,15 +2,17 @@ module Distribution.Solver.SAT.Implementation (
     satSolver,
 ) where
 
-import Control.Exception         (Exception, Handler (..), catches, finally, throwIO)
-import Control.Monad.Trans.State (StateT, evalStateT, execStateT)
-import Data.IORef                (IORef, modifyIORef', newIORef, readIORef, writeIORef)
-import Optics.Core               (at, ix, (%), (^?))
-import Optics.State              (use)
-import Optics.State.Operators    ((.=), (?=))
+import Control.Exception            (Exception, Handler (..), catches, finally, throwIO)
+import Control.Monad.Trans.State    (StateT, evalStateT, execStateT)
+import Data.IORef                   (IORef, modifyIORef', newIORef, readIORef, writeIORef)
+import Distribution.Solver.SAT.DMap (DMap, DSum (..))
+import Optics.Core                  (at, ix, (%), (^?))
+import Optics.State                 (use)
+import Optics.State.Operators       ((?=), (%=))
 
-import qualified Data.Map.Strict as Map
-import qualified Data.Set        as Set
+import qualified Data.Map.Strict              as Map
+import qualified Data.Set                     as Set
+import qualified Distribution.Solver.SAT.DMap as DMap
 
 import Distribution.Solver.SAT.Base
 import Distribution.Solver.SAT.Config
@@ -64,7 +66,7 @@ satSolver cfg platform compilerInfo installedIndex sourceIndex _pkgConfigDb _pre
                     v <- lift newLit
                     #packages % at ip.name ?= MkModelPackage
                         { components = Map.singleton (CLibName LMainLibName) l
-                        , versions   = Map.singleton (InstalledVersion ip.version ip.unitId) $ InstalledInfo v ip
+                        , versions   = DMap.singleton (InstalledVersion ip.version ip.unitId) (InstalledInfo v ip)
                         }
 
                 -- add target packages
@@ -98,13 +100,13 @@ satSolver cfg platform compilerInfo installedIndex sourceIndex _pkgConfigDb _pre
   where
     improve :: IORef (Maybe (Model Bool)) -> Stats -> Handle -> Model (Lit s) -> Model Bool -> SAT s (Model (Lit s), Model Bool)
     improve solutionRef stats sourceIndexHdl model' modelC = do
-        ifor_ (modelVersions modelC) $ \pn ver -> do
+        ifor_ (modelVersions modelC) $ \pn (Some ver) -> do
             forM_ (model' ^? #packages % ix pn % #versions) $ \vers -> do
-                ifor_ vers $ \ver' x -> do
+                for_ (DMap.toList vers) $ \(ver' :**: x) -> do
                     when (ver'.version < ver.version) $ do
                         addClause [neg x.value]
 
-        lits <- flip evalStateT model' $ forM (Map.toList $ modelVersions modelC) $ \(pn, ver) -> do
+        lits <- flip evalStateT model' $ forM (Map.toList $ modelVersions modelC) $ \(pn, Some ver) -> do
             getVersionLiteral pn ver
 
         addClause $ map neg lits
@@ -113,8 +115,8 @@ satSolver cfg platform compilerInfo installedIndex sourceIndex _pkgConfigDb _pre
         (model'', modelE) <- loop stats sourceIndexHdl model' modelD
 
         printSection "Improve differences"
-        ifor_ (Map.intersectionWith (,) (modelVersions modelC) (modelVersions modelE)) $ \pn (a, b) -> do
-            unless (a == b) $ do
+        ifor_ (Map.intersectionWith (,) (modelVersions modelC) (modelVersions modelE)) $ \pn (Some a, Some b) -> do
+            unless (eqp a b) $ do
                 liftIO $ putStrLn $ unwords [prettyShow pn, prettyShow a.version, prettyShow b.version]
 
         improve solutionRef stats sourceIndexHdl model'' modelE
@@ -129,7 +131,7 @@ satSolver cfg platform compilerInfo installedIndex sourceIndex _pkgConfigDb _pre
 
         model' <- flip execStateT model $
             ifor_ modelB.packages $ \pn pkg -> when (or pkg.components) $
-            ifor_ pkg.versions $ \ver def -> case def of
+            for_ (DMap.toList pkg.versions) $ \(ver :**: def) -> case def of
                 ShallowInfo True -> do
                     liftIO $ modifyIORef' stats.expanded (1 +)
                     liftIO $ modifyIORef' stats.expandedPkgs $ Map.insertWith (+) pn 1
@@ -147,8 +149,8 @@ satSolver cfg platform compilerInfo installedIndex sourceIndex _pkgConfigDb _pre
 
                         expandCondTree cfg sourceIndex (PackageIdentifier pn ver.version) cn cnLit verLit aflags depends
 
-                    #packages % ix pn % #versions % ix ver .=
-                        DeepInfo verLit aflags di
+                    #packages % ix pn % #versions %=
+                          DMap.insert ver (DeepInfo verLit aflags di)
 
                 _ -> return ()
 
@@ -196,40 +198,79 @@ newStats = do
 data Model a = MkModel
     { packages :: Map PackageName (ModelPackage a)
     }
-  deriving (Show, Generic, Functor, Foldable, Traversable)
+  deriving (Generic, Functor, Foldable, Traversable)
 
 emptyModel :: Model a
 emptyModel = MkModel Map.empty
 
-data ModelVersion
-    = SourceVersion !Version
-    | InstalledVersion !Version !UnitId
-  deriving (Eq, Ord, Show) -- TODO: remove ord.
+data ModelKind = Source | Installed
 
-instance HasField "version" ModelVersion Version where
+type ModelVersion :: ModelKind -> Type
+data ModelVersion k where
+    SourceVersion    :: !Version -> ModelVersion Source
+    InstalledVersion :: !Version -> !UnitId -> ModelVersion Installed
+
+instance Eq (ModelVersion k) where
+    (==) (SourceVersion x)      (SourceVersion u)      = x == u
+    (==) (InstalledVersion x y) (InstalledVersion u v) = x == u && y == v
+
+instance EqP ModelVersion where
+    eqp (SourceVersion x)      (SourceVersion u)      = x == u
+    eqp (InstalledVersion x y) (InstalledVersion u v) = x == u && y == v
+    eqp _                      _                      = False
+
+instance GEq ModelVersion where
+    geq (SourceVersion x)      (SourceVersion u)
+        | x == u = Just Refl
+    geq (InstalledVersion x y) (InstalledVersion u v)
+        | x == u, y == v = Just Refl
+    geq _ _ = Nothing
+
+instance GCompare ModelVersion where
+    gcompare (SourceVersion x)      (SourceVersion y) =
+        case compare x y of
+            GT -> GGT
+            EQ -> GEQ
+            LT -> GLT
+    gcompare (SourceVersion _)      (InstalledVersion _ _) = GLT
+    gcompare (InstalledVersion _ _) (SourceVersion _)      = GGT
+    gcompare (InstalledVersion x u) (InstalledVersion y v) =
+        case compare x y <> compare u v of
+            GT -> GGT
+            EQ -> GEQ
+            LT -> GLT
+
+deriving instance Show (ModelVersion k)
+
+instance HasField "version" (ModelVersion k) Version where
     getField (SourceVersion v)      = v
     getField (InstalledVersion v _) = v
 
 data ModelPackage a = MkModelPackage
     { components :: !(Map ComponentName a)               -- ^ (enabled) components
-    , versions   :: !(Map ModelVersion (ModelPackageInfo a))
+    , versions   :: !(DMap ModelVersion ModelPackageInfo a)
     }
-  deriving (Show, Generic, Functor, Foldable, Traversable)
+  deriving (Generic, Functor, Foldable, Traversable)
 
-data ModelPackageInfo a
-    = ShallowInfo a
-      -- ^ we have only create a placeholder literal for this version
+type ModelPackageInfo :: ModelKind -> Type -> Type
+data ModelPackageInfo k a where
+    -- | we have only create a placeholder literal for this version
+    ShallowInfo :: a -> ModelPackageInfo Source a
 
-    | DeepInfo a !(Map FlagName a) !DependencyInfo
-      -- ^ the version has been selected, so we expanded it further.
-      --
-      -- The members are selection literal, automatic flag assignment and dependency map.
+    -- | the version has been selected, so we expanded it further.
+    --
+    -- The members are selection literal, automatic flag assignment and dependency map.
+    DeepInfo :: a -> !(Map FlagName a) -> !DependencyInfo -> ModelPackageInfo Source a
 
-    | InstalledInfo a !InstalledPackage
-      -- ^ Installed package version
-  deriving (Show, Functor, Foldable, Traversable)
+    -- | Installed package version
+    InstalledInfo :: a -> !InstalledPackage -> ModelPackageInfo Installed a
 
-instance HasField "value" (ModelPackageInfo a) a where
+deriving instance Show a => Show (ModelPackageInfo k a)
+deriving instance Functor (ModelPackageInfo k)
+deriving instance Foldable (ModelPackageInfo k)
+deriving instance Traversable (ModelPackageInfo k)
+
+instance HasField "value" (ModelPackageInfo k a) a where
     getField (ShallowInfo x)     = x
     getField (DeepInfo x _ _)    = x
     getField (InstalledInfo x _) = x
@@ -243,7 +284,7 @@ printModel m = ifor_ m.packages $ \pn pkg -> do
             ShallowInfo   x'            -> if x' then bold (blue (prettyShow ver.version)) else blue (prettyShow ver.version)
             DeepInfo      x' aflags _di -> if x' then bold (prettyShow ver.version) ++ "(" ++ showFlags aflags ++ ")" else prettyShow ver.version
             InstalledInfo x' _ip        -> if x' then bold (green (prettyShow ver.version)) else green (prettyShow ver.version)
-        | (ver, x) <- Map.toList pkg.versions
+        | (ver :**: x) <- DMap.toList pkg.versions
         ]
 
 showFlags :: Map FlagName Bool -> String
@@ -255,11 +296,11 @@ showFlags m = prettyShow $ mkFlagAssignment $ Map.toList m
 
 -- | Convert model to package name -> version map.
 -- This is used for improving the solution.
-modelVersions :: Model Bool -> Map PackageName ModelVersion
+modelVersions :: Model Bool -> Map PackageName (Some ModelVersion)
 modelVersions m = Map.fromList
-    [ (pn, ver)
+    [ (pn, Some ver)
     | (pn, pkg) <- Map.toList m.packages
-    , (ver, x)  <- Map.toList pkg.versions
+    , (ver :**: x) <- DMap.toList pkg.versions
     , x.value
     ]
 
@@ -267,13 +308,14 @@ modelVersions m = Map.fromList
 convertModel :: Model Bool -> [ResolvedPackage]
 convertModel m = concat
     [ case x of
-        InstalledInfo True ip -> [Preinstalled ip]
+        InstalledInfo True ip   -> [Preinstalled ip]
         DeepInfo True aflags di -> [FromSource (PackageIdentifier pn ver.version) lns (mkFlagAssignment $ Map.toList $ di.manualFlags <> aflags)]
         _ -> []
     | (pn, pkg) <- Map.toList m.packages
     , let lns = Set.fromList [ ln | (ln, True) <- Map.toList pkg.components ]
-    , (ver, x)  <- Map.toList pkg.versions
+    , (ver :**: x)  <- DMap.toList pkg.versions
     ]
+
 -------------------------------------------------------------------------------
 -- Operations
 -------------------------------------------------------------------------------
@@ -296,12 +338,12 @@ getPackageVersion_ cfg sourceIndex pn = do
 
     return verLits
 
-getVersionLiteral :: PackageName -> ModelVersion -> MonadSolver s (Lit s)
+getVersionLiteral :: PackageName -> ModelVersion k -> MonadSolver s (Lit s)
 getVersionLiteral pn ver = do
     mv <- use (#packages % at pn)
     case mv of
         Nothing  -> liftIO $ fail "inconsistency?"
-        Just pkg -> case Map.lookup ver pkg.versions of
+        Just pkg -> case DMap.lookup ver pkg.versions of
             Nothing -> liftIO $ fail "inconsistency two?"
             Just pi -> return pi.value
 
@@ -311,7 +353,7 @@ getComponentLiterals
     -> SourcePackageIndex
     -> PackageName
     -> t ComponentName
-    -> MonadSolver s (t (Lit s), Map ModelVersion (Lit s))
+    -> MonadSolver s (t (Lit s), Map (Some ModelVersion) (Lit s))
 getComponentLiterals cfg sourceIndex pn lns = do
     mv <- use (#packages % at pn)
     case mv of
@@ -324,15 +366,16 @@ getComponentLiterals cfg sourceIndex pn lns = do
                     -- TODO: traverse through existing versions, and if they are expanded and don't have the component set it to false.
                     return l
 
-            return (compLits, fmap (.value) pkg.versions)
+            return (compLits, Map.fromList [ (Some ver, x.value) | ver :**: x <- DMap.toList pkg.versions ])
 
         Nothing -> do
             compLits <- traverse (\l -> (,) l <$> lift newLit) lns
             verLits <- getPackageVersion_ cfg sourceIndex pn
-            let verLits' = Map.mapKeys SourceVersion verLits
+            let verLits'  = Map.mapKeys (\v -> Some (SourceVersion v)) verLits
+                verLits'' = DMap.fromList [ SourceVersion v :**: ShallowInfo l | (v, l) <- Map.toList verLits ]
             #packages % at pn ?= MkModelPackage
                 { components = Map.fromList (toList compLits)
-                , versions   = fmap ShallowInfo verLits'
+                , versions   = verLits''
                 }
 
             return (fmap snd compLits, verLits')
@@ -356,7 +399,7 @@ expandCondTree cfg sourceIndex pi ln srcCompLit srcVerLit aflags = go [] where
             let verLits' :: [Lit s]
                 verLits' =
                     [ l
-                    | (v, l) <- Map.toList verLits
+                    | (Some v, l) <- Map.toList verLits
                     , v.version `withinRange` vr
                     ]
 
