@@ -13,12 +13,12 @@ import Data.Foldable             as X (foldl', toList)
 import Data.Foldable.WithIndex   as X (ifor_)
 import Data.Function             as X ((&))
 import Data.Functor.Identity     as X (Identity (..))
+import Data.List.NonEmpty        as X (NonEmpty (..), nonEmpty)
 import Data.Map                  as X (Map)
 import Data.Maybe                as X (catMaybes, fromMaybe)
 import Data.Set                  as X (Set)
 import Data.Void                 as X (Void)
 import Distribution.Package      as X (packageName, packageVersion)
-import Data.List.NonEmpty as X (NonEmpty (..), nonEmpty)
 import Distribution.Pretty       as X (prettyShow)
 import Distribution.Types.UnitId as X (UnitId, mkUnitId)
 import Distribution.Version      as X
@@ -32,7 +32,8 @@ import Text.Printf               as X (printf)
 import Distribution.PackageDescription as X
        (CondBranch (..), CondTree (..), Condition (..), Dependency (..),
        FlagAssignment, FlagName, GenericPackageDescription (..),
-       LibraryName (..), PackageIdentifier (..), PackageName, mkFlagAssignment, mkPackageName)
+       LibraryName (..), PackageIdentifier (..), PackageName, mkFlagAssignment,
+       mkPackageName)
 
 import Distribution.Types.DependencyMap as X
        (DependencyMap, fromDepMap, toDepMap)

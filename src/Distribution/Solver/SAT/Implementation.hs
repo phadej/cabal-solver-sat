@@ -2,12 +2,14 @@ module Distribution.Solver.SAT.Implementation (
     satSolver,
 ) where
 
-import Control.Monad.Trans.State (StateT, execStateT, evalStateT)
+import Control.Exception
+       (Exception, Handler (..), catches, finally, throwIO)
+import Control.Monad.Trans.State (StateT, evalStateT, execStateT)
+import Data.IORef
+       (IORef, modifyIORef', newIORef, readIORef, writeIORef)
 import Optics.Core               (at, ix, (%), (^?))
 import Optics.State              (use)
 import Optics.State.Operators    ((.=), (?=))
-import Data.IORef (newIORef, readIORef, modifyIORef', writeIORef, IORef)
-import Control.Exception (Exception, finally, Handler (..), throwIO, catches)
 
 import qualified Data.Map.Strict as Map
 import qualified Data.Set        as Set
@@ -31,14 +33,14 @@ satSolver cfg platform compilerInfo installedIndex sourceIndex _pkgConfigDb _pre
             s <- readIORef solutionRef
             case s of
                 Nothing -> throwIO IterationLimit
-                Just s' -> return (convertModel s') 
+                Just s' -> return (convertModel s')
 
         handlerUNSAT :: Handler [ResolvedPackage]
         handlerUNSAT = Handler $ \UnsatException -> do
             s <- readIORef solutionRef
             case s of
                 Nothing -> throwIO IterationLimit
-                Just s' -> return (convertModel s') 
+                Just s' -> return (convertModel s')
 
         printStats :: IO ()
         printStats = when cfg.printStats $ liftIO $ do
@@ -150,11 +152,11 @@ satSolver cfg platform compilerInfo installedIndex sourceIndex _pkgConfigDb _pre
         printSubsection "Current model"
         liftIO $ printModel modelB'
 
-        expanded' <- liftIO $ readIORef stats.expanded_ 
+        expanded' <- liftIO $ readIORef stats.expanded_
 
         if | expanded == expanded'         -> return (model', modelB')
            | iteration < cfg.maxIterations -> loop stats sourceIndexHdl model' modelB'
-           | otherwise                     -> liftIO $ throwIO IterationLimit  
+           | otherwise                     -> liftIO $ throwIO IterationLimit
 
 -------------------------------------------------------------------------------
 -- Exceptions

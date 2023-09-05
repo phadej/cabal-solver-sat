@@ -125,7 +125,7 @@ demoThis = do
         Preinstalled ip -> putStrLn $ green $ prettyShow ip.id
         FromSource pi lns flags -> putStrLn $ unwords $
             [ prettyShow pi ] ++
-            [ prettyLibraryName ln | ln <- toList lns ] ++ 
+            [ prettyLibraryName ln | ln <- toList lns ] ++
             [ prettyShow flags ]
 
 mkSourcePackages :: CI.PackageInfo -> Map Version SourcePackage
