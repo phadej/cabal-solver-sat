@@ -30,7 +30,7 @@ demoConfig :: Config
 demoConfig = MkConfig
     { maxIterations = 100
     , reverse       = True
-    , improve       = 10
+    , improve       = 0
     , printModels   = False
     , printStats    = True
     }
@@ -114,7 +114,7 @@ demo cabalFile = do
         demoPkgConfigDb
         demoPackagePreferences
         demoPackageConstraints
-        (Set.singleton pn)
+        (Set.singleton (pn, LMainLibName))
 
 demoThis :: IO ()
 demoThis = do

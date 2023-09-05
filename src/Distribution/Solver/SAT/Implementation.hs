@@ -68,11 +68,11 @@ satSolver cfg platform compilerInfo installedIndex sourceIndex _pkgConfigDb _pre
                         }
 
                 -- add target packages
-                forM_ targets $ \targetPkgName -> do
-                    liftIO $ printf "Target package: %s\n" (prettyShow targetPkgName)
+                forM_ targets $ \(targetPkgName, ln) -> do
+                    liftIO $ printf "Target component: %s %s\n" (prettyShow targetPkgName) (prettyLibraryName ln)
 
                     -- get literals for package components and versions
-                    (Identity libLit, verLits) <- getComponentLiterals cfg sourceIndex targetPkgName (Identity LMainLibName)
+                    (Identity libLit, verLits) <- getComponentLiterals cfg sourceIndex targetPkgName (Identity ln)
 
                     -- require library component to be available.
                     lift $ addClause [libLit]

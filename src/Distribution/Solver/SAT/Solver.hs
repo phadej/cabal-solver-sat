@@ -35,5 +35,5 @@ type DependencyResolver =
     PkgConfigDb ->
     PackagePreferences ->
     PackageConstraints ->
-    Set PackageName ->
+    Set (PackageName, LibraryName) ->
     IO [ResolvedPackage]
