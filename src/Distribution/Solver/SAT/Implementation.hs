@@ -102,7 +102,7 @@ satSolver cfg platform compilerInfo installedIndex sourceIndex _pkgConfigDb _pre
     improve solutionRef stats sourceIndexHdl model' modelC = do
         ifor_ (modelVersions modelC) $ \pn (Some ver) -> do
             forM_ (model' ^? #packages % ix pn % #versions) $ \vers -> do
-                for_ (DMap.toList vers) $ \(ver' :**: x) -> do
+                for_ (DMap.toList vers) $ \(ver' :&: x) -> do
                     when (ver'.version < ver.version) $ do
                         addClause [neg x.value]
 
@@ -131,7 +131,7 @@ satSolver cfg platform compilerInfo installedIndex sourceIndex _pkgConfigDb _pre
 
         model' <- flip execStateT model $
             ifor_ modelB.packages $ \pn pkg -> when (or pkg.components) $
-            for_ (DMap.toList pkg.versions) $ \(ver :**: def) -> case def of
+            for_ (DMap.toList pkg.versions) $ \(ver :&: def) -> case def of
                 ShallowInfo True -> do
                     liftIO $ modifyIORef' stats.expanded (1 +)
                     liftIO $ modifyIORef' stats.expandedPkgs $ Map.insertWith (+) pn 1
@@ -284,7 +284,7 @@ printModel m = ifor_ m.packages $ \pn pkg -> do
             ShallowInfo   x'            -> if x' then bold (blue (prettyShow ver.version)) else blue (prettyShow ver.version)
             DeepInfo      x' aflags _di -> if x' then bold (prettyShow ver.version) ++ "(" ++ showFlags aflags ++ ")" else prettyShow ver.version
             InstalledInfo x' _ip        -> if x' then bold (green (prettyShow ver.version)) else green (prettyShow ver.version)
-        | (ver :**: x) <- DMap.toList pkg.versions
+        | (ver :&: x) <- DMap.toList pkg.versions
         ]
 
 showFlags :: Map FlagName Bool -> String
@@ -300,7 +300,7 @@ modelVersions :: Model Bool -> Map PackageName (Some ModelVersion)
 modelVersions m = Map.fromList
     [ (pn, Some ver)
     | (pn, pkg) <- Map.toList m.packages
-    , (ver :**: x) <- DMap.toList pkg.versions
+    , (ver :&: x) <- DMap.toList pkg.versions
     , x.value
     ]
 
@@ -313,7 +313,7 @@ convertModel m = concat
         _ -> []
     | (pn, pkg) <- Map.toList m.packages
     , let lns = Set.fromList [ ln | (ln, True) <- Map.toList pkg.components ]
-    , (ver :**: x)  <- DMap.toList pkg.versions
+    , (ver :&: x)  <- DMap.toList pkg.versions
     ]
 
 -------------------------------------------------------------------------------
@@ -366,13 +366,13 @@ getComponentLiterals cfg sourceIndex pn lns = do
                     -- TODO: traverse through existing versions, and if they are expanded and don't have the component set it to false.
                     return l
 
-            return (compLits, Map.fromList [ (Some ver, x.value) | ver :**: x <- DMap.toList pkg.versions ])
+            return (compLits, Map.fromList [ (Some ver, x.value) | ver :&: x <- DMap.toList pkg.versions ])
 
         Nothing -> do
             compLits <- traverse (\l -> (,) l <$> lift newLit) lns
             verLits <- getPackageVersion_ cfg sourceIndex pn
             let verLits'  = Map.mapKeys (\v -> Some (SourceVersion v)) verLits
-                verLits'' = DMap.fromList [ SourceVersion v :**: ShallowInfo l | (v, l) <- Map.toList verLits ]
+                verLits'' = DMap.fromList [ SourceVersion v :&: ShallowInfo l | (v, l) <- Map.toList verLits ]
             #packages % at pn ?= MkModelPackage
                 { components = Map.fromList (toList compLits)
                 , versions   = verLits''

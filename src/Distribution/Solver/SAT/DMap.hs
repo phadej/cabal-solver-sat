@@ -5,6 +5,7 @@ import Distribution.Solver.SAT.Base
 
 import Data.Some (mkSome, withSome)
 
+
 -- |Dependent maps: 'k' is a GADT-like thing with a facility for
 -- rediscovering its type parameter, elements of which function as identifiers
 -- tagged with the type of the thing they identify.  Real GADTs are one
@@ -32,7 +33,7 @@ deriving instance (forall i. Foldable (f i)) => Foldable (DMap k f)
 deriving instance (forall i. Traversable (f i)) => Traversable (DMap k f)
 
 type DSum :: (k -> Type) -> (k -> Type -> Type) -> Type -> Type
-data DSum k p a where (:**:) :: k i -> p i a -> DSum k p a
+data DSum k p a where (:&:) :: k i -> p i a -> DSum k p a
 
 deriving instance (forall i. Functor (f i)) => Functor (DSum k f)
 deriving instance (forall i. Foldable (f i)) => Foldable (DSum k f)
@@ -94,7 +95,7 @@ lookupAssoc sk = withSome sk $ \k ->
         case gcompare k kx of
             GLT -> go l
             GGT -> go r
-            GEQ -> Just (kx :**: x)
+            GEQ -> Just (kx :&: x)
   in k `seq` go
 
 {--------------------------------------------------------------------
@@ -171,8 +172,8 @@ glue :: DMap k f a -> DMap k f a -> DMap k f a
 glue Tip r = r
 glue l Tip = l
 glue l r
-  | size l > size r = case deleteFindMax l of (km :**: m,l') -> balance km m l' r
-  | otherwise       = case deleteFindMin r of (km :**: m,r') -> balance km m l r'
+  | size l > size r = case deleteFindMax l of (km :&: m,l') -> balance km m l' r
+  | otherwise       = case deleteFindMin r of (km :&: m,r') -> balance km m l r'
 
 -- | /O(log n)/. Delete and find the minimal element.
 --
@@ -200,26 +201,26 @@ toTriple :: Triple' a b c -> (a, b, c)
 toTriple (Triple' a b c) = (a, b, c)
 {-# INLINE toTriple #-}
 
--- | /O(log n)/. Retrieves the minimal (key :**: value) entry of the map, and
+-- | /O(log n)/. Retrieves the minimal (key :&: value) entry of the map, and
 -- the map stripped of that element, or 'Nothing' if passed an empty map.
 minViewWithKey :: forall k f a . DMap k f a -> Maybe (DSum k f a, DMap k f a)
 minViewWithKey Tip = Nothing
 minViewWithKey (Bin _ k0 x0 l0 r0) = Just $! toPair $ go k0 x0 l0 r0
   where
     go :: k v -> f v a -> DMap k f a -> DMap k f a -> DSum k f a :*: DMap k f a
-    go k x Tip r = (k :**: x) :*: r
+    go k x Tip r = (k :&: x) :*: r
     go k x (Bin _ kl xl ll lr) r =
       let !(km :*: l') = go kl xl ll lr
       in (km :*: balance k x l' r)
 
--- | /O(log n)/. Retrieves the maximal (key :**: value) entry of the map, and
+-- | /O(log n)/. Retrieves the maximal (key :&: value) entry of the map, and
 -- the map stripped of that element, or 'Nothing' if passed an empty map.
 maxViewWithKey :: forall k f a . DMap k f a -> Maybe (DSum k f a, DMap k f a)
 maxViewWithKey Tip = Nothing
 maxViewWithKey (Bin _ k0 x0 l0 r0) = Just $! toPair $ go k0 x0 l0 r0
   where
     go :: k v -> f v a -> DMap k f a -> DMap k f a -> DSum k f a :*: DMap k f a
-    go k x l Tip = (k :**: x) :*: l
+    go k x l Tip = (k :&: x) :*: l
     go k x l (Bin _ kr xr rl rr) =
       let !(km :*: r') = go kr xr rl rr
       in (km :*: balance k x l r')
@@ -232,7 +233,7 @@ maxViewWithKey (Bin _ k0 x0 l0 r0) = Just $! toPair $ go k0 x0 l0 r0
 deleteFindMax :: DMap k f a -> (DSum k f a, DMap k f a)
 deleteFindMax t
   = case t of
-      Bin _ k x l Tip -> (k :**: x,l)
+      Bin _ k x l Tip -> (k :&: x,l)
       Bin _ k x l r   -> let (km,r') = deleteFindMax r in (km,balance k x l r')
       Tip             -> (error "Map.deleteFindMax: can not return the maximal element of an empty map", Tip)
 
@@ -354,7 +355,7 @@ trimLookupLo lo cmphi t@(Bin _ kx x l r)
               GT -> (lookupAssoc lo t, t)
               _  -> trimLookupLo lo cmphi l
       GT -> trimLookupLo lo cmphi r
-      EQ -> (Just (kx :**: x),trim (compare lo) cmphi r)
+      EQ -> (Just (kx :&: x),trim (compare lo) cmphi r)
 
 
 {--------------------------------------------------------------------
@@ -393,7 +394,7 @@ foldrWithKey f = go
 
 -- | /O(n)/. Convert to an ascending list.
 toList :: DMap k f a -> [DSum k f a]
-toList t = foldrWithKey (\k x xs -> (k :**: x) : xs) [] t
+toList t = foldrWithKey (\k x xs -> (k :&: x) : xs) [] t
 
 insert :: forall k f v a. GCompare k => k v -> f v a -> DMap k f a -> DMap k f a
 insert kx x = kx `seq` go
@@ -420,4 +421,4 @@ fromList :: GCompare k => [DSum k f a] -> DMap k f a
 fromList xs = foldl' ins empty xs
   where
     ins :: GCompare k => DMap k f a -> DSum k f a -> DMap k f a
-    ins t (k :**: x) = insert k x t
+    ins t (k :&: x) = insert k x t
