@@ -12,7 +12,7 @@ import qualified Distribution.System             as C
 import qualified Data.Map as Map
 
 data DependencyInfo = MkDependencyInfo
-    { manualFlags :: !(Map FlagName Bool) -- TODO: use FlagAssignment
+    { manualFlags :: !(Map FlagName Bool)
     , autoFlags   :: !(Map FlagName Bool)
     , components  :: !(Map ComponentName (CondTree FlagName () DependencyMap))
     }
@@ -33,6 +33,8 @@ mkDependencyInfo platform compilerInfo gpd = MkDependencyInfo
         [ (CLibName $ C.LSubLibName ln, extract l)
         | (ln, l) <- condSubLibraries gpd
         ]
+
+    -- TODO: read exes, tests, benchmarks and flibs
 
     mflags :: Map FlagName Bool
     mflags = manualFlags gpd
