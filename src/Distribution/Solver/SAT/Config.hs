@@ -8,6 +8,7 @@ data Config = MkConfig
     { maxIterations :: !Int
     , reverse       :: !Bool
     , improve       :: !Int
+    , printModels   :: !Bool
     , printStats    :: !Bool
     }
   deriving Show

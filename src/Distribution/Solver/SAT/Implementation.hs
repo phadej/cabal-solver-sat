@@ -32,21 +32,27 @@ satSolver cfg platform compilerInfo installedIndex sourceIndex _pkgConfigDb _pre
         handlerIL = Handler $ \IterationLimit -> do
             s <- readIORef solutionRef
             case s of
-                Nothing -> throwIO IterationLimit
+                Nothing -> do
+                    putStrLn $ magenta "caught UnsatException"
+                    throwIO IterationLimit
                 Just s' -> return (convertModel s')
 
         handlerUNSAT :: Handler [ResolvedPackage]
         handlerUNSAT = Handler $ \UnsatException -> do
             s <- readIORef solutionRef
             case s of
-                Nothing -> throwIO IterationLimit
+                Nothing -> do
+                    putStrLn $ magenta "caught UnsatException"
+                    epkgs <- readIORef stats.expandedPkgs
+                    forM_ (sortOn snd (Map.toList epkgs)) $ \(pn, n) -> when (n > 1) $ printf "%s: %d\n" (prettyShow pn) n
+                    throwIO UnsatException
                 Just s' -> return (convertModel s')
 
         printStats :: IO ()
         printStats = when cfg.printStats $ liftIO $ do
             printSection "Statistics"
             printf "Iterations: %d\n" =<< readIORef stats.iteration
-            printf "Expansions: %d\n" =<< readIORef stats.expanded_
+            printf "Expansions: %d\n" =<< readIORef stats.expanded
 
     flip finally printStats $ flip catches [handlerIL, handlerUNSAT] $ withFile sourceIndex.location ReadMode $ \sourceIndexHdl -> do
         model <- runSAT $ do
@@ -78,7 +84,7 @@ satSolver cfg platform compilerInfo installedIndex sourceIndex _pkgConfigDb _pre
 
             modelB <- solve model
 
-            liftIO $ printModel modelB
+            when cfg.printModels $ liftIO $ printModel modelB
 
             (model', modelC) <- loop stats sourceIndexHdl model modelB
             liftIO $ writeIORef solutionRef $ Just modelC
@@ -94,7 +100,6 @@ satSolver cfg platform compilerInfo installedIndex sourceIndex _pkgConfigDb _pre
   where
     improve :: IORef (Maybe (Model Bool)) -> Stats -> Handle -> Model (Lit s) -> Model Bool -> SAT s (Model (Lit s), Model Bool)
     improve solutionRef stats sourceIndexHdl model' modelC = do
-        printSection "Improve round"
         ifor_ (modelVersions modelC) $ \pn ver -> do
             forM_ (model' ^? #packages % ix pn % #versions) $ \vers -> do
                 ifor_ vers $ \ver' x -> do
@@ -103,6 +108,7 @@ satSolver cfg platform compilerInfo installedIndex sourceIndex _pkgConfigDb _pre
 
         lits <- flip evalStateT model' $ forM (Map.toList $ modelVersions modelC) $ \(pn, ver) -> do
             getVersionLiteral pn ver
+
         addClause $ map neg lits
 
         modelD <- solve model'
@@ -118,7 +124,7 @@ satSolver cfg platform compilerInfo installedIndex sourceIndex _pkgConfigDb _pre
     loop :: Stats -> Handle -> Model (Lit s) -> Model Bool -> SAT s (Model (Lit s), Model Bool)
     loop stats sourceIndexHdl model modelB = do
         iteration <- liftIO $ readIORef stats.iteration
-        expanded  <- liftIO $ readIORef stats.expanded_
+        expanded  <- liftIO $ readIORef stats.expanded
         liftIO $ modifyIORef' stats.iteration (1 +)
 
         printSection $ printf "Iteration %d" iteration
@@ -127,7 +133,8 @@ satSolver cfg platform compilerInfo installedIndex sourceIndex _pkgConfigDb _pre
             ifor_ modelB.packages $ \pn pkg -> when (or pkg.libraries) $
             ifor_ pkg.versions $ \ver def -> case def of
                 ShallowVersion True -> do
-                    liftIO $ modifyIORef' stats.expanded_ (1 +)
+                    liftIO $ modifyIORef' stats.expanded (1 +)
+                    liftIO $ modifyIORef' stats.expandedPkgs $ Map.insertWith (+) pn 1
                     verLit <- getVersionLiteral pn ver
 
                     liftIO $ printf "Expanding selected %s (literal %s)\n" (prettyShow (PackageIdentifier pn ver)) (show verLit)
@@ -140,7 +147,7 @@ satSolver cfg platform compilerInfo installedIndex sourceIndex _pkgConfigDb _pre
                         (Identity lnLit, _verLits) <- getComponentLiterals cfg sourceIndex pn (Identity ln)
                         liftIO $ printf "Component %s %s literal %s %s\n" (prettyShow (PackageIdentifier pn ver)) (show ln) (show lnLit) (show verLit)
 
-                        expandCondTree cfg sourceIndex lnLit verLit aflags depends
+                        expandCondTree cfg sourceIndex (PackageIdentifier pn ver) ln lnLit verLit aflags depends
 
                     #packages % ix pn % #versions % ix ver .=
                         DeepVersion verLit aflags di
@@ -149,10 +156,11 @@ satSolver cfg platform compilerInfo installedIndex sourceIndex _pkgConfigDb _pre
 
         modelB' <- solve model'
 
-        printSubsection "Current model"
-        liftIO $ printModel modelB'
+        when cfg.printModels $ do
+            printSubsection "Current model"
+            liftIO $ printModel modelB'
 
-        expanded' <- liftIO $ readIORef stats.expanded_
+        expanded' <- liftIO $ readIORef stats.expanded
 
         if | expanded == expanded'         -> return (model', modelB')
            | iteration < cfg.maxIterations -> loop stats sourceIndexHdl model' modelB'
@@ -170,14 +178,16 @@ instance Exception IterationLimit
 -------------------------------------------------------------------------------
 
 data Stats = MkStats
-    { expanded_ :: !(IORef Int)
-    , iteration :: !(IORef Int)
+    { expanded     :: !(IORef Int)
+    , iteration    :: !(IORef Int)
+    , expandedPkgs :: !(IORef (Map PackageName Int))
     }
 
 newStats :: IO Stats
 newStats = do
-  expanded_ <- newIORef 0
+  expanded <- newIORef 0
   iteration <- newIORef 0
+  expandedPkgs <- newIORef Map.empty
   return MkStats {..}
 
 -------------------------------------------------------------------------------
@@ -326,21 +336,18 @@ getComponentLiterals cfg sourceIndex pn lns = do
 expandCondTree
     :: forall s. Config
     -> SourcePackageIndex
+    -> PackageIdentifier                      -- ^ package identifier
+    -> LibraryName                            -- ^ component name
     -> Lit s                                  -- ^ component literal
     -> Lit s                                  -- ^ version litearal
     -> Map FlagName (Lit s)                   -- ^ automatic flags
     -> CondTree FlagName () DependencyMap     -- ^ dependency info tree
     -> MonadSolver s ()
-expandCondTree cfg sourceIndex srcCompLit srcVerLit aflags = go [] where
+expandCondTree cfg sourceIndex pi ln srcCompLit srcVerLit aflags = go [] where
     go :: [Lit s] -> CondTree FlagName () DependencyMap -> MonadSolver s ()
     go conds (CondNode dm () bs) = do
         forM_ (fromDepMap dm) $ \(Dependency pn vr lns) -> do
             (lnLits, verLits) <- getComponentLiterals cfg sourceIndex pn (toList lns)
-
-            -- liftIO $ putStrLn $ prettyShow pn ++ show verLits
-
-            when (null verLits) $ do
-                liftIO $ printf "dependency on package without any available versions: %s -> %s\n" "foo" (prettyShow pn)
 
             let verLits' :: [Lit s]
                 verLits' =
@@ -348,6 +355,9 @@ expandCondTree cfg sourceIndex srcCompLit srcVerLit aflags = go [] where
                     | (v, l) <- Map.toList verLits
                     , v `withinRange` vr
                     ]
+
+            when (null verLits') $ do
+                liftIO $ putStrLn $ magenta $ printf "dependency on package without any available versions: %s %s -> %s %s" (prettyShow pi) (prettyLibraryName ln) (prettyShow pn) (prettyShow vr)
 
             -- component depends on library components..
             forM_ lnLits $ \libLit -> do

@@ -32,6 +32,7 @@ demoConfig = MkConfig
     { maxIterations = 100
     , reverse       = True
     , improve       = 10
+    , printModels   = False
     , printStats    = True
     }
 
