@@ -14,7 +14,7 @@ import qualified Data.Map as Map
 data DependencyInfo = MkDependencyInfo
     { manualFlags :: !(Map FlagName Bool) -- TODO: use FlagAssignment
     , autoFlags   :: !(Map FlagName Bool)
-    , libraries   :: !(Map LibraryName (CondTree FlagName () DependencyMap))
+    , components  :: !(Map ComponentName (CondTree FlagName () DependencyMap))
     }
   deriving Show
 
@@ -22,15 +22,15 @@ mkDependencyInfo :: C.Platform -> C.CompilerInfo -> GenericPackageDescription ->
 mkDependencyInfo platform compilerInfo gpd = MkDependencyInfo
     { manualFlags = mflags
     , autoFlags   = aflags
-    , libraries   = Map.fromList $ mainLib ++ subLibs
+    , components  = Map.fromList $ mainLib ++ subLibs
     }
   where
     mainLib = case condLibrary gpd of
         Nothing -> []
-        Just l  -> [(C.LMainLibName, extract l)]
+        Just l  -> [(CLibName C.LMainLibName, extract l)]
 
     subLibs =
-        [ (C.LSubLibName ln, extract l)
+        [ (CLibName $ C.LSubLibName ln, extract l)
         | (ln, l) <- condSubLibraries gpd
         ]
 

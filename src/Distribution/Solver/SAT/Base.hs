@@ -1,6 +1,5 @@
 module Distribution.Solver.SAT.Base (
     module X,
-    prettyLibraryName,
     bold, blue, green, magenta, printSection, printSubsection,
 ) where
 
@@ -30,16 +29,12 @@ import System.IO                 as X (Handle, IOMode (..), withFile)
 import Text.Printf               as X (printf)
 
 import Distribution.PackageDescription as X
-       (CondBranch (..), CondTree (..), Condition (..), Dependency (..), FlagAssignment, FlagName, GenericPackageDescription (..),
+       (ComponentName (..), CondBranch (..), CondTree (..), Condition (..), Dependency (..), FlagAssignment, FlagName, GenericPackageDescription (..),
        LibraryName (..), PackageIdentifier (..), PackageName, mkFlagAssignment, mkPackageName)
 
 import Distribution.Types.DependencyMap as X (DependencyMap, fromDepMap, toDepMap)
 
 import qualified System.Console.ANSI as ANSI
-
-prettyLibraryName :: LibraryName -> String
-prettyLibraryName LMainLibName = "lib"
-prettyLibraryName (LSubLibName c) = "lib:" ++ prettyShow c
 
 bold :: String -> String
 bold str = ANSI.setSGRCode [ANSI.SetConsoleIntensity ANSI.BoldIntensity] ++ str ++ ANSI.setSGRCode []

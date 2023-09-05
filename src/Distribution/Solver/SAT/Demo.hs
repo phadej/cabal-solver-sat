@@ -114,7 +114,7 @@ demo cabalFile = do
         demoPkgConfigDb
         demoPackagePreferences
         demoPackageConstraints
-        (Set.singleton (pn, LMainLibName))
+        (Set.singleton (pn, CLibName LMainLibName))
 
 demoThis :: IO ()
 demoThis = do
@@ -125,7 +125,7 @@ demoThis = do
         Preinstalled ip -> putStrLn $ green $ prettyShow ip.id
         FromSource pi lns flags -> putStrLn $ unwords $
             [ prettyShow pi ] ++
-            [ prettyLibraryName ln | ln <- toList lns ] ++
+            [ prettyShow ln | ln <- toList lns ] ++
             [ prettyShow flags ]
 
 mkSourcePackages :: CI.PackageInfo -> Map Version SourcePackage
