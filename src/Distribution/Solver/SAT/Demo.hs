@@ -29,7 +29,7 @@ import qualified Distribution.System             as C
 -- | Demo configuration.
 demoConfig :: Config
 demoConfig = MkConfig
-    { maxIterations = 50
+    { maxIterations = 100
     , reverse       = True
     , improve       = 10
     , printStats    = True
@@ -119,10 +119,7 @@ demo cabalFile = do
 demoThis :: IO ()
 demoThis = do
     resolved <- demo "cabal-solver-sat.cabal"
-
-    putStrLn "--------------------------------------------------"
-    putStrLn "Solution"
-    putStrLn "--------------------------------------------------"
+    printSection "Solution"
 
     forM_ resolved $ \case
         Preinstalled ip -> putStrLn $ green $ prettyShow ip.id

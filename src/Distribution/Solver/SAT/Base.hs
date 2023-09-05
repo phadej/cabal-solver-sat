@@ -1,12 +1,12 @@
 module Distribution.Solver.SAT.Base (
     module X,
     prettyLibraryName,
-    bold, blue, green,
+    bold, blue, green, printSection, printSubsection,
 ) where
 
 import Codec.Archive.Tar.Index   as X (TarEntryOffset)
 import Control.Monad             as X (forM, forM_, unless, when)
-import Control.Monad.IO.Class    as X (liftIO)
+import Control.Monad.IO.Class    as X (MonadIO (..))
 import Control.Monad.Trans.Class as X (MonadTrans (..))
 import Data.Either               as X (partitionEithers)
 import Data.Foldable             as X (foldl', toList)
@@ -51,3 +51,15 @@ blue str = ANSI.setSGRCode [ANSI.SetColor ANSI.Foreground ANSI.Dull ANSI.Blue] +
 
 green :: String -> String
 green str = ANSI.setSGRCode [ANSI.SetColor ANSI.Foreground ANSI.Dull ANSI.Green] ++ str ++ ANSI.setSGRCode []
+
+printSection :: MonadIO m => String -> m ()
+printSection s = liftIO $ do
+    putStrLn ""
+    putStrLn $ bold s
+    putStrLn "=============================================="
+
+printSubsection :: MonadIO m => String -> m ()
+printSubsection s = liftIO $ do
+    putStrLn ""
+    putStrLn $ bold s
+    putStrLn "----------------------------------------------"
