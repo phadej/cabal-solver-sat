@@ -64,7 +64,7 @@ satSolver cfg platform compilerInfo installedIndex sourceIndex _pkgConfigDb _pre
                     v <- lift newLit
                     #packages % at ip.name ?= MkModelPackage
                         { components = Map.singleton (CLibName LMainLibName) l
-                        , versions   = Map.singleton ip.version $ InstalledVersion v ip
+                        , versions   = Map.singleton ip.version $ InstalledInfo v ip
                         }
 
                 -- add target packages
@@ -130,7 +130,7 @@ satSolver cfg platform compilerInfo installedIndex sourceIndex _pkgConfigDb _pre
         model' <- flip execStateT model $
             ifor_ modelB.packages $ \pn pkg -> when (or pkg.components) $
             ifor_ pkg.versions $ \ver def -> case def of
-                ShallowVersion True -> do
+                ShallowInfo True -> do
                     liftIO $ modifyIORef' stats.expanded (1 +)
                     liftIO $ modifyIORef' stats.expandedPkgs $ Map.insertWith (+) pn 1
                     verLit <- getVersionLiteral pn ver
@@ -148,7 +148,7 @@ satSolver cfg platform compilerInfo installedIndex sourceIndex _pkgConfigDb _pre
                         expandCondTree cfg sourceIndex (PackageIdentifier pn ver) cn cnLit verLit aflags depends
 
                     #packages % ix pn % #versions % ix ver .=
-                        DeepVersion verLit aflags di
+                        DeepInfo verLit aflags di
 
                 _ -> return ()
 
@@ -203,6 +203,7 @@ emptyModel = MkModel Map.empty
 
 data ModelVersion
     = SourceVersion !Version
+    | InstalledVersion !Version !UnitId
   deriving Show
 
 data ModelPackage a = MkModelPackage
@@ -212,22 +213,22 @@ data ModelPackage a = MkModelPackage
   deriving (Show, Generic, Functor, Foldable, Traversable)
 
 data ModelPackageInfo a
-    = ShallowVersion a
+    = ShallowInfo a
       -- ^ we have only create a placeholder literal for this version
 
-    | DeepVersion a !(Map FlagName a) !DependencyInfo
+    | DeepInfo a !(Map FlagName a) !DependencyInfo
       -- ^ the version has been selected, so we expanded it further.
       --
       -- The members are selection literal, automatic flag assignment and dependency map.
 
-    | InstalledVersion a !InstalledPackage
+    | InstalledInfo a !InstalledPackage
       -- ^ Installed package version
   deriving (Show, Functor, Foldable, Traversable)
 
 instance HasField "value" (ModelPackageInfo a) a where
-    getField (ShallowVersion x)     = x
-    getField (DeepVersion x _ _)    = x
-    getField (InstalledVersion x _) = x
+    getField (ShallowInfo x)     = x
+    getField (DeepInfo x _ _)    = x
+    getField (InstalledInfo x _) = x
 
 printModel :: Model Bool -> IO ()
 printModel m = ifor_ m.packages $ \pn pkg -> do
@@ -235,9 +236,9 @@ printModel m = ifor_ m.packages $ \pn pkg -> do
         [ bold (prettyShow pn) ] ++
         [ prettyShow cn | (cn, True) <- Map.toList pkg.components ] ++
         [ case x of
-            ShallowVersion   x'            -> if x' then bold (blue (prettyShow ver)) else blue (prettyShow ver)
-            DeepVersion      x' aflags _di -> if x' then bold (prettyShow ver) ++ "(" ++ showFlags aflags ++ ")" else prettyShow ver
-            InstalledVersion x' _ip        -> if x' then bold (green (prettyShow ver)) else green (prettyShow ver)
+            ShallowInfo   x'            -> if x' then bold (blue (prettyShow ver)) else blue (prettyShow ver)
+            DeepInfo      x' aflags _di -> if x' then bold (prettyShow ver) ++ "(" ++ showFlags aflags ++ ")" else prettyShow ver
+            InstalledInfo x' _ip        -> if x' then bold (green (prettyShow ver)) else green (prettyShow ver)
         | (ver, x) <- Map.toList pkg.versions
         ]
 
@@ -262,8 +263,8 @@ modelVersions m = Map.fromList
 convertModel :: Model Bool -> [ResolvedPackage]
 convertModel m = concat
     [ case x of
-        InstalledVersion True ip -> [Preinstalled ip]
-        DeepVersion True aflags di -> [FromSource (PackageIdentifier pn ver) lns (mkFlagAssignment $ Map.toList $ di.manualFlags <> aflags)]
+        InstalledInfo True ip -> [Preinstalled ip]
+        DeepInfo True aflags di -> [FromSource (PackageIdentifier pn ver) lns (mkFlagAssignment $ Map.toList $ di.manualFlags <> aflags)]
         _ -> []
     | (pn, pkg) <- Map.toList m.packages
     , let lns = Set.fromList [ ln | (ln, True) <- Map.toList pkg.components ]
@@ -326,7 +327,7 @@ getComponentLiterals cfg sourceIndex pn lns = do
             verLits <- getPackageVersion_ cfg sourceIndex pn
             #packages % at pn ?= MkModelPackage
                 { components = Map.fromList (toList compLits)
-                , versions   = fmap ShallowVersion verLits
+                , versions   = fmap ShallowInfo verLits
                 }
 
             return (fmap snd compLits, verLits)
