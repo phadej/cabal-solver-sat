@@ -12,8 +12,7 @@ module Distribution.Solver.SAT.Demo (
     demoPackageConstraints,
 ) where
 
-import Distribution.PackageDescription.Parsec
-       (parseGenericPackageDescriptionMaybe)
+import Distribution.PackageDescription.Parsec (parseGenericPackageDescriptionMaybe)
 
 import Distribution.Solver.SAT
 import Distribution.Solver.SAT.Base

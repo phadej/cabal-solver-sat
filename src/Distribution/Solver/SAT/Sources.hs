@@ -5,8 +5,7 @@ module Distribution.Solver.SAT.Sources (
     readSourcePackage,
 ) where
 
-import Distribution.PackageDescription.Parsec
-       (parseGenericPackageDescriptionMaybe)
+import Distribution.PackageDescription.Parsec (parseGenericPackageDescriptionMaybe)
 
 import Distribution.Solver.SAT.Base
 

@@ -22,8 +22,7 @@ import Data.Void                 as X (Void)
 import Distribution.Package      as X (packageName, packageVersion)
 import Distribution.Pretty       as X (prettyShow)
 import Distribution.Types.UnitId as X (UnitId, mkUnitId)
-import Distribution.Version      as X
-       (Version, VersionRange, mkVersion, withinRange)
+import Distribution.Version      as X (Version, VersionRange, mkVersion, withinRange)
 import GHC.Generics              as X (Generic)
 import GHC.Records               as X (HasField (..))
 import Prelude                   as X hiding (pi)
@@ -31,13 +30,10 @@ import System.IO                 as X (Handle, IOMode (..), withFile)
 import Text.Printf               as X (printf)
 
 import Distribution.PackageDescription as X
-       (CondBranch (..), CondTree (..), Condition (..), Dependency (..),
-       FlagAssignment, FlagName, GenericPackageDescription (..),
-       LibraryName (..), PackageIdentifier (..), PackageName, mkFlagAssignment,
-       mkPackageName)
+       (CondBranch (..), CondTree (..), Condition (..), Dependency (..), FlagAssignment, FlagName, GenericPackageDescription (..),
+       LibraryName (..), PackageIdentifier (..), PackageName, mkFlagAssignment, mkPackageName)
 
-import Distribution.Types.DependencyMap as X
-       (DependencyMap, fromDepMap, toDepMap)
+import Distribution.Types.DependencyMap as X (DependencyMap, fromDepMap, toDepMap)
 
 import qualified System.Console.ANSI as ANSI
 

@@ -2,11 +2,9 @@ module Distribution.Solver.SAT.Implementation (
     satSolver,
 ) where
 
-import Control.Exception
-       (Exception, Handler (..), catches, finally, throwIO)
+import Control.Exception         (Exception, Handler (..), catches, finally, throwIO)
 import Control.Monad.Trans.State (StateT, evalStateT, execStateT)
-import Data.IORef
-       (IORef, modifyIORef', newIORef, readIORef, writeIORef)
+import Data.IORef                (IORef, modifyIORef', newIORef, readIORef, writeIORef)
 import Optics.Core               (at, ix, (%), (^?))
 import Optics.State              (use)
 import Optics.State.Operators    ((.=), (?=))
