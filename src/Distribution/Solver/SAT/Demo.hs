@@ -3,6 +3,7 @@ module Distribution.Solver.SAT.Demo (
     demo,
     demoThis,
     demoSudoku,
+    demoPandoc,
     -- * Demo inputs
     demoConfig,
     demoInstalledPackageIndex,
@@ -31,7 +32,7 @@ demoConfig :: Config
 demoConfig = MkConfig
     { maxIterations = 100
     , reverse       = True
-    , improve       = 0
+    , improve       = 30
     , printModels   = False
     , printStats    = True
     }
@@ -126,6 +127,11 @@ demoThis = do
 demoSudoku :: IO ()
 demoSudoku = do
     resolved <- demo "examples/sudoku.cabal"
+    printSolution resolved
+
+demoPandoc :: IO ()
+demoPandoc = do
+    resolved <- demo "examples/pandoc-3.1.7.cabal"
     printSolution resolved
 
 printSolution :: [ResolvedPackage] -> IO ()

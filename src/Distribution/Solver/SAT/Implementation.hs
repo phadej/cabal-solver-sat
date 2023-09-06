@@ -145,7 +145,7 @@ satSolver cfg platform compilerInfo installedIndex sourceIndex _pkgConfigDb _pre
 
                     ifor_ di.components $ \cn depends -> do
                         (Identity cnLit, _verLits) <- getComponentLiterals cfg sourceIndex pn (Identity cn)
-                        liftIO $ printf "Component %s %s literal %s %s\n" (prettyShow (PackageIdentifier pn ver.version)) (show cn) (show cnLit) (show verLit)
+                        liftIO $ printf "Component %s %s literal %s %s\n" (prettyShow (PackageIdentifier pn ver.version)) (prettyShow cn) (show cnLit) (show verLit)
 
                         expandCondTree cfg sourceIndex (PackageIdentifier pn ver.version) cn cnLit verLit aflags depends
 
