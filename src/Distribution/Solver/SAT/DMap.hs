@@ -1,9 +1,14 @@
--- | This is like @DMap@ in @dependent-map@, but it has additional argument.
+-- | This is like @DMap@ in @dependent-map@, but it has additional argument making it Traversable.
 module Distribution.Solver.SAT.DMap where
 
-import Distribution.Solver.SAT.Base
+import Prelude
+       (Bool (..), Foldable, Functor, Int, Maybe (..), Ord (..), Ordering (..), Traversable, error, otherwise, seq, ($!), ($), (&&), (*),
+       (+))
 
-import Data.Some (mkSome, withSome)
+import Data.Foldable     (foldl')
+import Data.GADT.Compare (GCompare (..), GOrdering (..))
+import Data.Kind         (Type)
+import Data.Some         (Some, mkSome, withSome)
 
 
 -- |Dependent maps: 'k' is a GADT-like thing with a facility for
