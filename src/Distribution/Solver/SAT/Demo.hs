@@ -2,6 +2,7 @@ module Distribution.Solver.SAT.Demo (
     -- * Demo
     demo,
     demoThis,
+    demoSudoku,
     -- * Demo inputs
     demoConfig,
     demoInstalledPackageIndex,
@@ -119,6 +120,16 @@ demo cabalFile = do
 demoThis :: IO ()
 demoThis = do
     resolved <- demo "cabal-solver-sat.cabal"
+    printSolution resolved
+
+-- | https://oleg.fi/gists/posts/2023-08-30-using-cabal-install-solver-as-sat-solver.html
+demoSudoku :: IO ()
+demoSudoku = do
+    resolved <- demo "examples/sudoku.cabal"
+    printSolution resolved
+
+printSolution :: [ResolvedPackage] -> IO ()
+printSolution resolved = do
     printSection "Solution"
 
     forM_ resolved $ \case
