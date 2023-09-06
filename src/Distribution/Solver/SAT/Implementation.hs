@@ -8,7 +8,7 @@ import Data.IORef                   (IORef, modifyIORef', newIORef, readIORef, w
 import Distribution.Solver.SAT.DMap (DMap, DSum (..))
 import Optics.Core                  (at, ix, (%), (^?))
 import Optics.State                 (use)
-import Optics.State.Operators       ((?=), (%=))
+import Optics.State.Operators       ((%=), (?=))
 
 import qualified Data.Map.Strict              as Map
 import qualified Data.Set                     as Set
@@ -51,8 +51,11 @@ satSolver cfg platform compilerInfo installedIndex sourceIndex _pkgConfigDb _pre
         printStats :: IO ()
         printStats = when cfg.printStats $ liftIO $ do
             printSection "Statistics"
-            printf "Iterations: %d\n" =<< readIORef stats.iteration
-            printf "Expansions: %d\n" =<< readIORef stats.expanded
+            printf "Iterations:    %d\n" =<< readIORef stats.iteration
+            printf "Improvements:  %d\n" =<< readIORef stats.improvements
+            printf "Expansions:    %d\n" =<< readIORef stats.expanded
+            printf "SAT variables: %d\n" =<< readIORef stats.literals
+            printf "SAT clauses:   %d\n" =<< readIORef stats.clauses
 
     flip finally printStats $ flip catches [handlerIL, handlerUNSAT] $ withFile sourceIndex.location ReadMode $ \sourceIndexHdl -> do
         model <- runSAT $ do
@@ -82,6 +85,7 @@ satSolver cfg platform compilerInfo installedIndex sourceIndex _pkgConfigDb _pre
                     -- require at least one version to be available
                     lift $ assertAtLeastOne (toList verLits)
 
+            saveSATstats stats
             modelB <- solve model
 
             when cfg.printModels $ liftIO $ printModel modelB
@@ -89,44 +93,55 @@ satSolver cfg platform compilerInfo installedIndex sourceIndex _pkgConfigDb _pre
             (model', modelC) <- loop stats sourceIndexHdl model modelB
             liftIO $ writeIORef solutionRef $ Just modelC
 
-            if cfg.improve > 0
-            then do
-                (_, modelE) <- improve solutionRef stats sourceIndexHdl model' modelC
-                return modelE
-            else do
-              return modelC
+            (_, modelE) <- improve solutionRef stats sourceIndexHdl model' modelC
+            return modelE
 
         return $ convertModel model
   where
+    saveSATstats :: Stats -> SAT s ()
+    saveSATstats stats = do
+        clauseN <- numberOfClauses
+        variableN <- numberOfVariables
+        liftIO $ do
+            modifyIORef' stats.clauses $ max clauseN
+            writeIORef stats.literals variableN
+
     improve :: IORef (Maybe (Model Bool)) -> Stats -> Handle -> Model (Lit s) -> Model Bool -> SAT s (Model (Lit s), Model Bool)
     improve solutionRef stats sourceIndexHdl model' modelC = do
-        ifor_ (modelVersions modelC) $ \pn (Some ver) -> do
-            forM_ (model' ^? #packages % ix pn % #versions) $ \vers -> do
-                for_ (DMap.toList vers) $ \(ver' :&: x) -> do
-                    when (ver'.version < ver.version) $ do
-                        addClause [neg x.value]
+        improvements <- liftIO $ readIORef stats.improvements
+        if improvements >= cfg.improve
+        then return (model', modelC)
+        else do
+            ifor_ (modelVersions modelC) $ \pn (Some ver) -> do
+                forM_ (model' ^? #packages % ix pn % #versions) $ \vers -> do
+                    for_ (DMap.toList vers) $ \(ver' :&: x) -> do
+                        when (ver'.version < ver.version) $ do
+                            addClause [neg x.value]
 
-        lits <- flip evalStateT model' $ forM (Map.toList $ modelVersions modelC) $ \(pn, Some ver) -> do
-            getVersionLiteral pn ver
+            lits <- flip evalStateT model' $ forM (Map.toList $ modelVersions modelC) $ \(pn, Some ver) -> do
+                getVersionLiteral pn ver
 
-        addClause $ map neg lits
+            addClause $ map neg lits
 
-        modelD <- solve model'
-        (model'', modelE) <- loop stats sourceIndexHdl model' modelD
+            saveSATstats stats
+            modelD <- solve model'
+            (model'', modelE) <- loop stats sourceIndexHdl model' modelD
 
-        printSection "Improve differences"
-        ifor_ (Map.intersectionWith (,) (modelVersions modelC) (modelVersions modelE)) $ \pn (Some a, Some b) -> do
-            unless (eqp a b) $ do
-                liftIO $ putStrLn $ unwords [prettyShow pn, prettyShow a.version, prettyShow b.version]
+            printSection "Improve differences"
+            ifor_ (Map.intersectionWith (,) (modelVersions modelC) (modelVersions modelE)) $ \pn (Some a, Some b) -> do
+                unless (eqp a b) $ do
+                    liftIO $ putStrLn $ unwords [prettyShow pn, prettyShow a.version, prettyShow b.version]
 
-        improve solutionRef stats sourceIndexHdl model'' modelE
+            liftIO $ modifyIORef' stats.improvements (1 +)
+
+            improve solutionRef stats sourceIndexHdl model'' modelE
 
     loop :: Stats -> Handle -> Model (Lit s) -> Model Bool -> SAT s (Model (Lit s), Model Bool)
     loop stats sourceIndexHdl model modelB = do
         iteration <- liftIO $ readIORef stats.iteration
         expanded  <- liftIO $ readIORef stats.expanded
-        liftIO $ modifyIORef' stats.iteration (1 +)
 
+        liftIO $ modifyIORef' stats.iteration (1 +)
         printSection $ printf "Iteration %d" iteration
 
         model' <- flip execStateT model $
@@ -137,7 +152,7 @@ satSolver cfg platform compilerInfo installedIndex sourceIndex _pkgConfigDb _pre
                     liftIO $ modifyIORef' stats.expandedPkgs $ Map.insertWith (+) pn 1
                     verLit <- getVersionLiteral pn ver
 
-                    liftIO $ printf "Expanding selected %s (literal %s)\n" (prettyShow (PackageIdentifier pn ver.version)) (show verLit)
+                    liftIO $ printf "Package %s (literal %s)\n" (prettyShow (PackageIdentifier pn ver.version)) (show verLit)
                     gpd <- liftIO $ readSourcePackage sourceIndexHdl pn ver.version sourceIndex
                     let di = mkDependencyInfo platform compilerInfo gpd
 
@@ -145,7 +160,7 @@ satSolver cfg platform compilerInfo installedIndex sourceIndex _pkgConfigDb _pre
 
                     ifor_ di.components $ \cn depends -> do
                         (Identity cnLit, _verLits) <- getComponentLiterals cfg sourceIndex pn (Identity cn)
-                        liftIO $ printf "Component %s %s literal %s %s\n" (prettyShow (PackageIdentifier pn ver.version)) (prettyShow cn) (show cnLit) (show verLit)
+                        liftIO $ printf "     -> %s %s (literals %s %s)\n" (prettyShow (PackageIdentifier pn ver.version)) (prettyShow cn) (show verLit) (show cnLit)
 
                         expandCondTree cfg sourceIndex (PackageIdentifier pn ver.version) cn cnLit verLit aflags depends
 
@@ -154,17 +169,18 @@ satSolver cfg platform compilerInfo installedIndex sourceIndex _pkgConfigDb _pre
 
                 _ -> return ()
 
-        modelB' <- solve model'
-
-        when cfg.printModels $ do
-            printSubsection "Current model"
-            liftIO $ printModel modelB'
-
         expanded' <- liftIO $ readIORef stats.expanded
+        if | expanded == expanded'          -> return (model, modelB)
+           | iteration >= cfg.maxIterations -> liftIO $ throwIO IterationLimit
+           | otherwise -> do
+              saveSATstats stats
+              modelB' <- solve model'
 
-        if | expanded == expanded'         -> return (model', modelB')
-           | iteration < cfg.maxIterations -> loop stats sourceIndexHdl model' modelB'
-           | otherwise                     -> liftIO $ throwIO IterationLimit
+              when cfg.printModels $ do
+                  printSubsection "Current model"
+                  liftIO $ printModel modelB'
+
+              loop stats sourceIndexHdl model' modelB'
 
 -------------------------------------------------------------------------------
 -- Exceptions
@@ -180,14 +196,20 @@ instance Exception IterationLimit
 data Stats = MkStats
     { expanded     :: !(IORef Int)
     , iteration    :: !(IORef Int)
+    , improvements :: !(IORef Int)
     , expandedPkgs :: !(IORef (Map PackageName Int))
+    , literals     :: !(IORef Int)
+    , clauses      :: !(IORef Int)
     }
 
 newStats :: IO Stats
 newStats = do
   expanded <- newIORef 0
   iteration <- newIORef 0
+  improvements <- newIORef 0
   expandedPkgs <- newIORef Map.empty
+  literals <- newIORef 0
+  clauses  <- newIORef 0
   return MkStats {..}
 
 -------------------------------------------------------------------------------
