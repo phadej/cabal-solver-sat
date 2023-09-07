@@ -5,9 +5,11 @@ module Distribution.Solver.SAT.DependencyInfo (
 
 import Distribution.Solver.SAT.Base
 
-import qualified Distribution.Compiler           as C
-import qualified Distribution.PackageDescription as C
-import qualified Distribution.System             as C
+import qualified Distribution.Compat.Lens          as L
+import qualified Distribution.Compiler             as C
+import qualified Distribution.PackageDescription   as C
+import qualified Distribution.System               as C
+import qualified Distribution.Types.BuildInfo.Lens as L
 
 import qualified Data.Map as Map
 
@@ -22,7 +24,7 @@ mkDependencyInfo :: C.Platform -> C.CompilerInfo -> GenericPackageDescription ->
 mkDependencyInfo platform compilerInfo gpd = MkDependencyInfo
     { manualFlags = mflags
     , autoFlags   = aflags
-    , components  = Map.fromList $ mainLib ++ subLibs
+    , components  = Map.fromList $ mainLib ++ subLibs ++ exes
     }
   where
     mainLib = case condLibrary gpd of
@@ -34,7 +36,12 @@ mkDependencyInfo platform compilerInfo gpd = MkDependencyInfo
         | (ln, l) <- condSubLibraries gpd
         ]
 
-    -- TODO: read exes, tests, benchmarks and flibs
+    exes =
+        [ (CExeName cn, extract l)
+        | (cn, l) <- condExecutables gpd
+        ]
+
+    -- TODO: tests, benchmarks and flibs
 
     mflags :: Map FlagName Bool
     mflags = manualFlags gpd
@@ -42,15 +49,15 @@ mkDependencyInfo platform compilerInfo gpd = MkDependencyInfo
     aflags :: Map FlagName Bool
     aflags = automaticFlags gpd
 
-    extract :: CondTree C.ConfVar [C.Dependency] C.Library -> CondTree FlagName () DependencyMap
+    extract :: L.HasBuildInfo a => CondTree C.ConfVar [C.Dependency] a -> CondTree FlagName () DependencyMap
     extract l = fmap (toDepMap . C.targetBuildDepends) $ extract2 platform compilerInfo mflags (extract1 l)
 
 -------------------------------------------------------------------------------
 -- Extracting dependency info.
 -------------------------------------------------------------------------------
 
-extract1 :: CondTree C.ConfVar [C.Dependency] C.Library -> CondTree C.ConfVar () C.BuildInfo
-extract1 = C.mapCondTree C.libBuildInfo (const ()) id
+extract1 :: L.HasBuildInfo a => CondTree C.ConfVar [C.Dependency] a -> CondTree C.ConfVar () C.BuildInfo
+extract1 = C.mapCondTree (L.view L.buildInfo) (const ()) id
 
 extract2 :: (Semigroup c, Semigroup a) => C.Platform -> C.CompilerInfo -> Map FlagName Bool -> CondTree C.ConfVar c a -> CondTree FlagName c a
 extract2 (C.Platform arch os) compilerInfo mflags = simplifyCondTree' (simplifyConfVar os arch compilerInfo mflags)
