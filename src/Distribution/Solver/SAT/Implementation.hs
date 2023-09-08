@@ -349,17 +349,6 @@ assertImplication xs ys = do
     -- liftIO $ putStrLn $ "assertImplication: " ++ show xs ++ show ys
     lift $ addClause $ map neg xs ++ ys
 
-getPackageVersion_ :: Config -> OpenedSourcePackageIndex srcpkg loc -> PackageName -> MonadSolver srcpkg loc s (Map Version (srcpkg, Lit s))
-getPackageVersion_ cfg sourceIndex pn = do
-    let targetVersions = lookupSourcePackage pn sourceIndex
-
-    verLits <- forM targetVersions $ \i -> (,) i <$> lift newLit
-
-    let reorder = if cfg.reverse then reverse else id
-    lift $ assertAtMostOne $ reorder $ map snd $ toList verLits
-
-    return verLits
-
 getVersionLiteral :: PackageName -> ModelVersion k -> MonadSolver srcpkg loc s (Lit s)
 getVersionLiteral pn ver = do
     mv <- use (#packages % at pn)
@@ -370,7 +359,7 @@ getVersionLiteral pn ver = do
             Just pi -> return pi.value
 
 getComponentLiterals
-    :: Traversable t
+    :: forall t srcpkg loc s. Traversable t
     => Config
     -> OpenedSourcePackageIndex srcpkg loc
     -> PackageName
@@ -392,7 +381,7 @@ getComponentLiterals cfg sourceIndex pn lns = do
 
         Nothing -> do
             compLits <- traverse (\l -> (,) l <$> lift newLit) lns
-            verLits <- getPackageVersion_ cfg sourceIndex pn
+            verLits <- getPackageVersion_
             let verLits'  = Map.mapKeys (\v -> Some (SourceVersion v)) verLits
                 verLits'' = DMap.fromList [ SourceVersion v :&: ShallowInfo l i | (v, (i, l)) <- Map.toList verLits ]
             #packages % at pn ?= MkModelPackage
@@ -401,6 +390,18 @@ getComponentLiterals cfg sourceIndex pn lns = do
                 }
 
             return (fmap snd compLits, fmap snd verLits')
+  where
+    getPackageVersion_ :: MonadSolver srcpkg loc s (Map Version (srcpkg, Lit s))
+    getPackageVersion_ = do
+        let targetVersions = lookupSourcePackage pn sourceIndex
+
+        verLits <- forM targetVersions $ \i -> (,) i <$> lift newLit
+
+        let reorder = if cfg.reverse then reverse else id
+        lift $ assertAtMostOne $ reorder $ map snd $ toList verLits
+
+        return verLits
+
 
 expandCondTree
     :: forall s srcpkg loc. Config
