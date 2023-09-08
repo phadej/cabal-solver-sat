@@ -14,8 +14,8 @@ import qualified Distribution.Compiler as C
 import qualified Distribution.System   as C
 
 -- | Resolved package.
-data ResolvedPackage
-    = FromSource   PackageIdentifier (Set ComponentName) FlagAssignment
+data ResolvedPackage loc
+    = FromSource PackageIdentifier (Set ComponentName) FlagAssignment
       -- ^ build from source. We only track library components at the moment.
       --
       -- To track exe-dependencies (@build-tool-depends@), tests and benchmarks, we'll need to change to @'Set' 'LibraryName'@ to @'Set' 'ComponentName'@.
@@ -27,13 +27,13 @@ data ResolvedPackage
 -- | Replicating type from @cabal-install-solver@:
 --
 -- https://hackage.haskell.org/package/cabal-install-solver-3.10.1.0/docs/Distribution-Solver-Types-DependencyResolver.html#t:DependencyResolver
-type DependencyResolver =
+type DependencyResolver loc =
     C.Platform ->
     C.CompilerInfo ->
     InstalledPackageIndex ->
-    SourcePackageIndex ->
+    SourcePackageIndex loc ->
     PkgConfigDb ->
     PackagePreferences ->
     PackageConstraints ->
     Set (PackageName, ComponentName) ->
-    IO [ResolvedPackage]
+    IO [ResolvedPackage loc]

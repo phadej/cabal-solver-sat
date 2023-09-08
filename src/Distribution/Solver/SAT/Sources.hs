@@ -1,48 +1,42 @@
 module Distribution.Solver.SAT.Sources (
     SourcePackageIndex (..),
+    OpenedSourcePackageIndex,
     SourcePackage (..),
+    openSourcePackageIndex,
     lookupSourcePackage,
     readSourcePackage,
 ) where
 
-import Distribution.PackageDescription.Parsec (parseGenericPackageDescriptionMaybe)
-
 import Distribution.Solver.SAT.Base
 
-import qualified Codec.Archive.Tar.Entry as Tar
-import qualified Codec.Archive.Tar.Index as Tar
-import qualified Data.ByteString.Lazy    as LBS
-import qualified Data.Map.Strict         as Map
+import qualified Data.Map.Strict as Map
 
--- | Source package index, i.e. all packages to be built.
--- Includes the local packages as well (which shadow repositories).
-data SourcePackageIndex = MkSourcePackageIndex
-    { location :: FilePath
-    , packages :: Map PackageName (Map Version SourcePackage)
+data SourcePackageIndex loc where
+    MkSourcePackageIndex
+        :: (forall r. ((s -> IO (SourcePackage loc)) -> IO r) -> IO r)  -- ^ open source local package index
+        -> Map PackageName (Map Version s)
+        -> SourcePackageIndex loc
+
+data SourcePackage loc = MkSourcePackage
+    { location    :: !loc
+    , description :: !GenericPackageDescription
     }
   deriving Show
 
-data SourcePackage
-    = ProjectPackage !GenericPackageDescription  -- ^ local, project package.
-    | RemotePackage !TarEntryOffset              -- ^ package in a source-repository. tar entry offset tells which.
-  deriving Show
+data OpenedSourcePackageIndex srcpkg loc = MkOpenedSourcePackageIndex
+    { packages :: Map PackageName (Map Version srcpkg)
+    , lookup   :: srcpkg -> IO (SourcePackage loc)
+    }
 
-lookupSourcePackage :: PackageName -> SourcePackageIndex -> Map Version SourcePackage
+openSourcePackageIndex :: SourcePackageIndex loc -> (forall srcpkg. OpenedSourcePackageIndex srcpkg loc -> IO r) -> IO r
+openSourcePackageIndex (MkSourcePackageIndex o m) kont = o (\l -> kont (MkOpenedSourcePackageIndex m l))
+
+lookupSourcePackage :: PackageName -> OpenedSourcePackageIndex srcpkg loc -> Map Version srcpkg
 lookupSourcePackage pn idx = Map.findWithDefault Map.empty pn idx.packages
 
-readSourcePackage :: Handle -> PackageName -> Version -> SourcePackageIndex -> IO GenericPackageDescription
-readSourcePackage hdl pn pv idx = case Map.lookup pn idx.packages of
+readSourcePackage :: PackageName -> Version -> OpenedSourcePackageIndex srcpkg loc -> IO (SourcePackage loc)
+readSourcePackage pn pv idx = case Map.lookup pn idx.packages of
     Nothing -> fail $ "No" ++ show pn
     Just vers -> case Map.lookup pv vers of
         Nothing -> fail $ "No" ++ show (pn, pv)
-        Just (ProjectPackage gpd) -> return gpd
-        Just (RemotePackage offset) -> do
-            entry <- Tar.hReadEntry hdl offset
-            case Tar.entryContent entry of
-                Tar.NormalFile lbs _ -> do
-                    gpd <- maybe (fail "foo") return (parseGenericPackageDescriptionMaybe (LBS.toStrict lbs))
-                    return gpd
-
-
-                _ -> do
-                    fail "wront tar entry"
+        Just srcpkg -> idx.lookup srcpkg

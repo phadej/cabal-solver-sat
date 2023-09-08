@@ -23,12 +23,14 @@ import Distribution.Solver.SAT.Sources
 
 import Control.Monad.SAT
 
-satSolver :: Config -> DependencyResolver
+
+
+satSolver :: forall loc. Config -> DependencyResolver loc
 satSolver cfg platform compilerInfo installedIndex sourceIndex _pkgConfigDb _preferences _constraints targets = do
     stats <- newStats
     solutionRef <- newIORef Nothing
 
-    let handlerIL :: Handler [ResolvedPackage]
+    let handlerIL :: Handler [ResolvedPackage loc]
         handlerIL = Handler $ \IterationLimit -> do
             s <- readIORef solutionRef
             case s of
@@ -37,7 +39,7 @@ satSolver cfg platform compilerInfo installedIndex sourceIndex _pkgConfigDb _pre
                     throwIO IterationLimit
                 Just s' -> return (convertModel s')
 
-        handlerUNSAT :: Handler [ResolvedPackage]
+        handlerUNSAT :: Handler [ResolvedPackage loc]
         handlerUNSAT = Handler $ \UnsatException -> do
             s <- readIORef solutionRef
             case s of
@@ -57,7 +59,7 @@ satSolver cfg platform compilerInfo installedIndex sourceIndex _pkgConfigDb _pre
             printf "SAT variables: %d\n" =<< readIORef stats.literals
             printf "SAT clauses:   %d\n" =<< readIORef stats.clauses
 
-    flip finally printStats $ flip catches [handlerIL, handlerUNSAT] $ withFile sourceIndex.location ReadMode $ \sourceIndexHdl -> do
+    flip finally printStats $ flip catches [handlerIL, handlerUNSAT] $ openSourcePackageIndex sourceIndex $ \sourceIndex' -> do
         model <- runSAT $ do
             -- create initial model
             printSection "Initial model"
@@ -77,7 +79,7 @@ satSolver cfg platform compilerInfo installedIndex sourceIndex _pkgConfigDb _pre
                     liftIO $ printf "Target component: %s %s\n" (prettyShow targetPkgName) (prettyShow cn)
 
                     -- get literals for package components and versions
-                    (Identity compLit, verLits) <- getComponentLiterals cfg sourceIndex targetPkgName (Identity cn)
+                    (Identity compLit, verLits) <- getComponentLiterals cfg sourceIndex' targetPkgName (Identity cn)
 
                     -- require library component to be available.
                     lift $ addClause [compLit]
@@ -90,10 +92,10 @@ satSolver cfg platform compilerInfo installedIndex sourceIndex _pkgConfigDb _pre
 
             when cfg.printModels $ liftIO $ printModel modelB
 
-            (model', modelC) <- loop stats sourceIndexHdl model modelB
+            (model', modelC) <- loop stats sourceIndex' model modelB
             liftIO $ writeIORef solutionRef $ Just modelC
 
-            (_, modelE) <- improve solutionRef stats sourceIndexHdl model' modelC
+            (_, modelE) <- improve solutionRef stats sourceIndex' model' modelC
             return modelE
 
         return $ convertModel model
@@ -106,7 +108,7 @@ satSolver cfg platform compilerInfo installedIndex sourceIndex _pkgConfigDb _pre
             modifyIORef' stats.clauses $ max clauseN
             writeIORef stats.literals variableN
 
-    improve :: IORef (Maybe (Model Bool)) -> Stats -> Handle -> Model (Lit s) -> Model Bool -> SAT s (Model (Lit s), Model Bool)
+    improve :: IORef (Maybe (Model Bool)) -> Stats -> OpenedSourcePackageIndex srcpkg loc -> Model (Lit s) -> Model Bool -> SAT s (Model (Lit s), Model Bool)
     improve solutionRef stats sourceIndexHdl model' modelC = do
         improvements <- liftIO $ readIORef stats.improvements
         if improvements >= cfg.improve
@@ -136,8 +138,8 @@ satSolver cfg platform compilerInfo installedIndex sourceIndex _pkgConfigDb _pre
 
             improve solutionRef stats sourceIndexHdl model'' modelE
 
-    loop :: Stats -> Handle -> Model (Lit s) -> Model Bool -> SAT s (Model (Lit s), Model Bool)
-    loop stats sourceIndexHdl model modelB = do
+    loop :: Stats -> OpenedSourcePackageIndex srcpkg loc -> Model (Lit s) -> Model Bool -> SAT s (Model (Lit s), Model Bool)
+    loop stats sourceIndex' model modelB = do
         iteration <- liftIO $ readIORef stats.iteration
         expanded  <- liftIO $ readIORef stats.expanded
 
@@ -153,16 +155,16 @@ satSolver cfg platform compilerInfo installedIndex sourceIndex _pkgConfigDb _pre
                     verLit <- getVersionLiteral pn ver
 
                     liftIO $ printf "Package %s (literal %s)\n" (prettyShow (PackageIdentifier pn ver.version)) (show verLit)
-                    gpd <- liftIO $ readSourcePackage sourceIndexHdl pn ver.version sourceIndex
-                    let di = mkDependencyInfo platform compilerInfo gpd
+                    gpd <- liftIO $ readSourcePackage pn ver.version sourceIndex'
+                    let di = mkDependencyInfo platform compilerInfo gpd.description
 
                     aflags <- forM di.autoFlags $ \_ -> lift newLit
 
                     ifor_ di.components $ \cn depends -> do
-                        (Identity cnLit, _verLits) <- getComponentLiterals cfg sourceIndex pn (Identity cn)
+                        (Identity cnLit, _verLits) <- getComponentLiterals cfg sourceIndex' pn (Identity cn)
                         liftIO $ printf "     -> %s %s (literals %s %s)\n" (prettyShow (PackageIdentifier pn ver.version)) (prettyShow cn) (show verLit) (show cnLit)
 
-                        expandCondTree cfg sourceIndex (PackageIdentifier pn ver.version) cn cnLit verLit aflags depends
+                        expandCondTree cfg sourceIndex' (PackageIdentifier pn ver.version) cn cnLit verLit aflags depends
 
                     #packages % ix pn % #versions %=
                           DMap.insert ver (DeepInfo verLit aflags di)
@@ -180,7 +182,7 @@ satSolver cfg platform compilerInfo installedIndex sourceIndex _pkgConfigDb _pre
                   printSubsection "Current model"
                   liftIO $ printModel modelB'
 
-              loop stats sourceIndexHdl model' modelB'
+              loop stats sourceIndex' model' modelB'
 
 -------------------------------------------------------------------------------
 -- Exceptions
@@ -327,7 +329,7 @@ modelVersions m = Map.fromList
     ]
 
 -- | Convert model to the final result.
-convertModel :: Model Bool -> [ResolvedPackage]
+convertModel :: Model Bool -> [ResolvedPackage loc]
 convertModel m = concat
     [ case x of
         InstalledInfo True ip   -> [Preinstalled ip]
@@ -349,7 +351,7 @@ assertImplication xs ys = do
     -- liftIO $ putStrLn $ "assertImplication: " ++ show xs ++ show ys
     lift $ addClause $ map neg xs ++ ys
 
-getPackageVersion_ :: Config -> SourcePackageIndex -> PackageName -> MonadSolver s (Map Version (Lit s))
+getPackageVersion_ :: Config -> OpenedSourcePackageIndex srcpkg loc -> PackageName -> MonadSolver s (Map Version (Lit s))
 getPackageVersion_ cfg sourceIndex pn = do
     let targetVersions = lookupSourcePackage pn sourceIndex
 
@@ -372,7 +374,7 @@ getVersionLiteral pn ver = do
 getComponentLiterals
     :: Traversable t
     => Config
-    -> SourcePackageIndex
+    -> OpenedSourcePackageIndex srcpkg loc
     -> PackageName
     -> t ComponentName
     -> MonadSolver s (t (Lit s), Map (Some ModelVersion) (Lit s))
@@ -403,8 +405,8 @@ getComponentLiterals cfg sourceIndex pn lns = do
             return (fmap snd compLits, verLits')
 
 expandCondTree
-    :: forall s. Config
-    -> SourcePackageIndex
+    :: forall s srcpkg loc. Config
+    -> OpenedSourcePackageIndex srcpkg loc
     -> PackageIdentifier                      -- ^ package identifier
     -> ComponentName                          -- ^ component name
     -> Lit s                                  -- ^ component literal

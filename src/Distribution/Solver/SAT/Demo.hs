@@ -20,7 +20,10 @@ import Distribution.Solver.SAT
 import Distribution.Solver.SAT.Base
 
 import qualified Cabal.Index                     as CI
+import qualified Codec.Archive.Tar.Entry         as Tar
+import qualified Codec.Archive.Tar.Index         as Tar
 import qualified Data.ByteString                 as BS
+import qualified Data.ByteString.Lazy            as LBS
 import qualified Data.Map.Strict                 as Map
 import qualified Data.Set                        as Set
 import qualified Distribution.Compiler           as C
@@ -77,7 +80,7 @@ demoPackageConstraints :: PackageConstraints
 demoPackageConstraints = MkPackageConstraints
 
 -- | Demo. Solve for an input @.cabal@ file.
-demo :: FilePath -> IO [ResolvedPackage]
+demo :: FilePath -> IO [ResolvedPackage DemoLoc]
 demo cabalFile = do
     contents <- BS.readFile cabalFile
     gpd <- maybe (fail "foo") return (parseGenericPackageDescriptionMaybe contents)
@@ -88,8 +91,8 @@ demo cabalFile = do
     -- constructing source package index
     (hackageTar, hackage) <- CI.cachedHackageMetadata
 
-    let demoSourcePackageIndex :: SourcePackageIndex
-        demoSourcePackageIndex = MkSourcePackageIndex hackageTar $
+    let demoSourcePackageIndex :: SourcePackageIndex DemoLoc
+        demoSourcePackageIndex = mkDemoSourcePackageIndex hackageTar $
             Map.map mkSourcePackages hackage
 
             -- remove few non-re-installable packages.
@@ -104,8 +107,7 @@ demo cabalFile = do
             -- remove the target package name from the source index.
             & Map.insert pn (Map.singleton pv (ProjectPackage gpd))
 
-    printf "SourcePackageIndex at: %s\n" demoSourcePackageIndex.location
-    printf "SourcePackageIndex size: %d\n" (Map.size demoSourcePackageIndex.packages)
+    printf "SourcePackageIndex size: %d\n" (case demoSourcePackageIndex of MkSourcePackageIndex _ packages -> Map.size packages)
 
     satSolver
         demoConfig
@@ -134,7 +136,7 @@ demoPandoc = do
     resolved <- demo "examples/pandoc-3.1.7.cabal"
     printSolution resolved
 
-printSolution :: [ResolvedPackage] -> IO ()
+printSolution :: [ResolvedPackage DemoLoc] -> IO ()
 printSolution resolved = do
     printSection "Solution"
 
@@ -145,10 +147,10 @@ printSolution resolved = do
             [ prettyShow ln | ln <- toList lns ] ++
             [ prettyShow flags ]
 
-mkSourcePackages :: CI.PackageInfo -> Map Version SourcePackage
+mkSourcePackages :: CI.PackageInfo -> Map Version DemoSourcePackage
 mkSourcePackages = Map.map mkSourcePackage . CI.piVersions
 
-mkSourcePackage :: CI.ReleaseInfo -> SourcePackage
+mkSourcePackage :: CI.ReleaseInfo -> DemoSourcePackage
 mkSourcePackage = RemotePackage . CI.riTarOffset
 
 gpdPackageName :: GenericPackageDescription -> PackageName
@@ -156,3 +158,28 @@ gpdPackageName = packageName . C.package . packageDescription
 
 gpdPackageVersion :: GenericPackageDescription -> Version
 gpdPackageVersion = packageVersion . C.package . packageDescription
+
+data DemoLoc = Local | Hackage deriving Show
+
+data DemoSourcePackage
+    = ProjectPackage !GenericPackageDescription  -- ^ local, project package.
+    | RemotePackage !TarEntryOffset              -- ^ package in a source-repository. tar entry offset tells which.
+  deriving Show
+
+mkDemoSourcePackageIndex :: FilePath -> Map PackageName (Map Version DemoSourcePackage) -> SourcePackageIndex DemoLoc
+mkDemoSourcePackageIndex tarPath index = MkSourcePackageIndex open index where
+    open :: ((DemoSourcePackage -> IO (SourcePackage DemoLoc)) -> IO r) -> IO r
+    open kont = withFile tarPath ReadMode $ \hdl -> do
+        kont (readSrcPkg hdl)
+
+    readSrcPkg :: Handle -> DemoSourcePackage -> IO (SourcePackage DemoLoc)
+    readSrcPkg _   (ProjectPackage gpd)   = return (MkSourcePackage Local gpd)
+    readSrcPkg hdl (RemotePackage offset) = do
+        entry <- Tar.hReadEntry hdl offset
+        case Tar.entryContent entry of
+            Tar.NormalFile lbs _ -> do
+                gpd <- maybe (fail "foo") return (parseGenericPackageDescriptionMaybe (LBS.toStrict lbs))
+                return (MkSourcePackage Hackage gpd)
+
+            _ -> do
+                fail "wrong tar entry"
