@@ -23,8 +23,6 @@ import Distribution.Solver.SAT.Sources
 
 import Control.Monad.SAT
 
-
-
 satSolver :: forall loc. Config -> DependencyResolver loc
 satSolver cfg platform compilerInfo installedIndex sourceIndex _pkgConfigDb _preferences _constraints targets = do
     stats <- newStats
@@ -108,7 +106,7 @@ satSolver cfg platform compilerInfo installedIndex sourceIndex _pkgConfigDb _pre
             modifyIORef' stats.clauses $ max clauseN
             writeIORef stats.literals variableN
 
-    improve :: IORef (Maybe (Model Bool)) -> Stats -> OpenedSourcePackageIndex srcpkg loc -> Model (Lit s) -> Model Bool -> SAT s (Model (Lit s), Model Bool)
+    improve :: IORef (Maybe (Model loc Bool)) -> Stats -> OpenedSourcePackageIndex srcpkg loc -> Model loc (Lit s) -> Model loc Bool -> SAT s (Model loc (Lit s), Model loc Bool)
     improve solutionRef stats sourceIndexHdl model' modelC = do
         improvements <- liftIO $ readIORef stats.improvements
         if improvements >= cfg.improve
@@ -138,7 +136,7 @@ satSolver cfg platform compilerInfo installedIndex sourceIndex _pkgConfigDb _pre
 
             improve solutionRef stats sourceIndexHdl model'' modelE
 
-    loop :: Stats -> OpenedSourcePackageIndex srcpkg loc -> Model (Lit s) -> Model Bool -> SAT s (Model (Lit s), Model Bool)
+    loop :: Stats -> OpenedSourcePackageIndex srcpkg loc -> Model loc (Lit s) -> Model loc Bool -> SAT s (Model loc (Lit s), Model loc Bool)
     loop stats sourceIndex' model modelB = do
         iteration <- liftIO $ readIORef stats.iteration
         expanded  <- liftIO $ readIORef stats.expanded
@@ -219,12 +217,12 @@ newStats = do
 -------------------------------------------------------------------------------
 
 -- | Complete model.
-data Model a = MkModel
+data Model loc a = MkModel
     { packages :: Map PackageName (ModelPackage a)
     }
   deriving (Generic, Functor, Foldable, Traversable)
 
-emptyModel :: Model a
+emptyModel :: Model loc a
 emptyModel = MkModel Map.empty
 
 data ModelKind = Source | Installed
@@ -299,7 +297,7 @@ instance HasField "value" (ModelPackageInfo k a) a where
     getField (DeepInfo x _ _)    = x
     getField (InstalledInfo x _) = x
 
-printModel :: Model Bool -> IO ()
+printModel :: Model loc Bool -> IO ()
 printModel m = ifor_ m.packages $ \pn pkg -> do
     putStrLn $ unwords $
         [ bold (prettyShow pn) ] ++
@@ -320,7 +318,7 @@ showFlags m = prettyShow $ mkFlagAssignment $ Map.toList m
 
 -- | Convert model to package name -> version map.
 -- This is used for improving the solution.
-modelVersions :: Model Bool -> Map PackageName (Some ModelVersion)
+modelVersions :: Model loc Bool -> Map PackageName (Some ModelVersion)
 modelVersions m = Map.fromList
     [ (pn, Some ver)
     | (pn, pkg) <- Map.toList m.packages
@@ -329,7 +327,7 @@ modelVersions m = Map.fromList
     ]
 
 -- | Convert model to the final result.
-convertModel :: Model Bool -> [ResolvedPackage loc]
+convertModel :: Model loc Bool -> [ResolvedPackage loc]
 convertModel m = concat
     [ case x of
         InstalledInfo True ip   -> [Preinstalled ip]
@@ -344,14 +342,14 @@ convertModel m = concat
 -- Operations
 -------------------------------------------------------------------------------
 
-type MonadSolver s = StateT (Model (Lit s)) (SAT s)
+type MonadSolver loc s = StateT (Model loc (Lit s)) (SAT s)
 
-assertImplication :: [Lit s] -> [Lit s] -> MonadSolver s ()
+assertImplication :: [Lit s] -> [Lit s] -> MonadSolver loc s ()
 assertImplication xs ys = do
     -- liftIO $ putStrLn $ "assertImplication: " ++ show xs ++ show ys
     lift $ addClause $ map neg xs ++ ys
 
-getPackageVersion_ :: Config -> OpenedSourcePackageIndex srcpkg loc -> PackageName -> MonadSolver s (Map Version (Lit s))
+getPackageVersion_ :: Config -> OpenedSourcePackageIndex srcpkg loc -> PackageName -> MonadSolver loc s (Map Version (Lit s))
 getPackageVersion_ cfg sourceIndex pn = do
     let targetVersions = lookupSourcePackage pn sourceIndex
 
@@ -362,7 +360,7 @@ getPackageVersion_ cfg sourceIndex pn = do
 
     return verLits
 
-getVersionLiteral :: PackageName -> ModelVersion k -> MonadSolver s (Lit s)
+getVersionLiteral :: PackageName -> ModelVersion k -> MonadSolver loc s (Lit s)
 getVersionLiteral pn ver = do
     mv <- use (#packages % at pn)
     case mv of
@@ -377,7 +375,7 @@ getComponentLiterals
     -> OpenedSourcePackageIndex srcpkg loc
     -> PackageName
     -> t ComponentName
-    -> MonadSolver s (t (Lit s), Map (Some ModelVersion) (Lit s))
+    -> MonadSolver loc s (t (Lit s), Map (Some ModelVersion) (Lit s))
 getComponentLiterals cfg sourceIndex pn lns = do
     mv <- use (#packages % at pn)
     case mv of
@@ -413,9 +411,9 @@ expandCondTree
     -> Lit s                                  -- ^ version litearal
     -> Map FlagName (Lit s)                   -- ^ automatic flags
     -> CondTree FlagName () DependencyMap     -- ^ dependency info tree
-    -> MonadSolver s ()
+    -> MonadSolver loc s ()
 expandCondTree cfg sourceIndex pi ln srcCompLit srcVerLit aflags = go [] where
-    go :: [Lit s] -> CondTree FlagName () DependencyMap -> MonadSolver s ()
+    go :: [Lit s] -> CondTree FlagName () DependencyMap -> MonadSolver loc s ()
     go conds (CondNode dm () bs) = do
         forM_ (fromDepMap dm) $ \(Dependency pn vr lns) -> do
             (lnLits, verLits) <- getComponentLiterals cfg sourceIndex pn (map CLibName (toList lns))
