@@ -147,6 +147,7 @@ ruled out as well.
 The `InstalledPackageIndex` is the installed packages. Currently these contain the package (versions) bundled with GHC: `base`, `ghc-prim`, `template-haskell` but also a version of `containers`, `transformers` etc.
 
 The `PackageIndex (SourcePackage loc)` are the source packages, i.e. usually Hackage, but also (local) packages in the project.
+The `loc` argument is an extra bits for each package (usually a location), which solver doesn't care about, but threads through into result.
 
 The `PkgConfigDb` are the native libraries which build info is provided by `pkg-config`, i.e. solver takes into account `pkgconfig-depends` definitions.
 In other words, it can backtrack if `pkgconfig-depends` are not satisfied. Yet, the `extra-libraries` are always assumed to be satifiable.
@@ -164,3 +165,5 @@ constraint: lens ^>=5.2.3
 as additional constraints in your `cabal.project`. These are not problematic for SAT encoding.
 We could either encode them directly, or apply them even before encoding to SAT.
 (`cabal-install`s solver uses them similarly to other constraints, which makes the error reporting more uniform. E.g. you see that it rulled all older `lens` versions due the constraint, they don't simply disapppear).
+
+The `Set PackageName` ...
