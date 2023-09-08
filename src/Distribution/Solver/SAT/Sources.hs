@@ -34,9 +34,5 @@ openSourcePackageIndex (MkSourcePackageIndex o m) kont = o (\l -> kont (MkOpened
 lookupSourcePackage :: PackageName -> OpenedSourcePackageIndex srcpkg loc -> Map Version srcpkg
 lookupSourcePackage pn idx = Map.findWithDefault Map.empty pn idx.packages
 
-readSourcePackage :: PackageName -> Version -> OpenedSourcePackageIndex srcpkg loc -> IO (SourcePackage loc)
-readSourcePackage pn pv idx = case Map.lookup pn idx.packages of
-    Nothing -> fail $ "No" ++ show pn
-    Just vers -> case Map.lookup pv vers of
-        Nothing -> fail $ "No" ++ show (pn, pv)
-        Just srcpkg -> idx.lookup srcpkg
+readSourcePackage :: srcpkg -> OpenedSourcePackageIndex srcpkg loc -> IO (SourcePackage loc)
+readSourcePackage srcpkg idx = idx.lookup srcpkg

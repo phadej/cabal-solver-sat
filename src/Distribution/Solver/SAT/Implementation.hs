@@ -148,13 +148,13 @@ satSolver cfg platform compilerInfo installedIndex sourceIndex _pkgConfigDb _pre
         model' <- flip execStateT model $
             ifor_ modelB.packages $ \pn pkg -> when (or pkg.components) $
             for_ (DMap.toList pkg.versions) $ \(ver :&: def) -> case def of
-                ShallowInfo True -> do
+                ShallowInfo True i -> do
                     liftIO $ modifyIORef' stats.expanded (1 +)
                     liftIO $ modifyIORef' stats.expandedPkgs $ Map.insertWith (+) pn 1
                     verLit <- getVersionLiteral pn ver
 
                     liftIO $ printf "Package %s (literal %s)\n" (prettyShow (PackageIdentifier pn ver.version)) (show verLit)
-                    gpd <- liftIO $ readSourcePackage pn ver.version sourceIndex'
+                    gpd <- liftIO $ readSourcePackage i sourceIndex'
                     let di = mkDependencyInfo platform compilerInfo gpd.description
 
                     aflags <- forM di.autoFlags $ \_ -> lift newLit
@@ -219,7 +219,7 @@ newStats = do
 
 -- | Complete model.
 data Model srcpkg loc a = MkModel
-    { packages :: Map PackageName (ModelPackage loc a)
+    { packages :: Map PackageName (ModelPackage srcpkg loc a)
     }
   deriving (Generic, Functor, Foldable, Traversable)
 
@@ -269,31 +269,31 @@ instance HasField "version" (ModelVersion k) Version where
     getField (SourceVersion v)      = v
     getField (InstalledVersion v _) = v
 
-data ModelPackage loc a = MkModelPackage
+data ModelPackage srcpkg loc a = MkModelPackage
     { components :: !(Map ComponentName a)               -- ^ (enabled) components
-    , versions   :: !(DMap ModelVersion (ModelPackageInfo loc) a)
+    , versions   :: !(DMap ModelVersion (ModelPackageInfo srcpkg loc) a)
     }
   deriving (Generic, Functor, Foldable, Traversable)
 
-type ModelPackageInfo :: Type -> ModelKind -> Type -> Type
-data ModelPackageInfo loc k a where
+type ModelPackageInfo :: Type -> Type -> ModelKind -> Type -> Type
+data ModelPackageInfo srcpkg loc k a where
     -- | we have only create a placeholder literal for this version
-    ShallowInfo :: a -> ModelPackageInfo loc Source a
+    ShallowInfo :: a -> !srcpkg -> ModelPackageInfo srcpkg loc Source a
 
     -- | the version has been selected, so we expanded it further.
     --
     -- The members are selection literal, automatic flag assignment and dependency map.
-    DeepInfo :: a -> !loc -> !(Map FlagName a) -> !DependencyInfo -> ModelPackageInfo loc Source a
+    DeepInfo :: a -> !loc -> !(Map FlagName a) -> !DependencyInfo -> ModelPackageInfo srcpkg loc Source a
 
     -- | Installed package version
-    InstalledInfo :: a -> !InstalledPackage -> ModelPackageInfo loc Installed a
+    InstalledInfo :: a -> !InstalledPackage -> ModelPackageInfo srcpkg loc Installed a
 
-deriving instance Functor (ModelPackageInfo loc k)
-deriving instance Foldable (ModelPackageInfo loc k)
-deriving instance Traversable (ModelPackageInfo loc k)
+deriving instance Functor (ModelPackageInfo srcpkg loc k)
+deriving instance Foldable (ModelPackageInfo srcpkg loc k)
+deriving instance Traversable (ModelPackageInfo srcpkg loc k)
 
-instance HasField "value" (ModelPackageInfo loc k a) a where
-    getField (ShallowInfo x)     = x
+instance HasField "value" (ModelPackageInfo srcpkg loc k a) a where
+    getField (ShallowInfo x _)   = x
     getField (DeepInfo x _ _ _)  = x
     getField (InstalledInfo x _) = x
 
@@ -303,7 +303,7 @@ printModel m = ifor_ m.packages $ \pn pkg -> do
         [ bold (prettyShow pn) ] ++
         [ prettyShow cn | (cn, True) <- Map.toList pkg.components ] ++
         [ case x of
-            ShallowInfo   x'              -> if x' then bold (blue (prettyShow ver.version)) else blue (prettyShow ver.version)
+            ShallowInfo   x' _            -> if x' then bold (blue (prettyShow ver.version)) else blue (prettyShow ver.version)
             DeepInfo      x' _ aflags _di -> if x' then bold (prettyShow ver.version) ++ "(" ++ showFlags aflags ++ ")" else prettyShow ver.version
             InstalledInfo x' _ip          -> if x' then bold (green (prettyShow ver.version)) else green (prettyShow ver.version)
         | (ver :&: x) <- DMap.toList pkg.versions
@@ -349,14 +349,14 @@ assertImplication xs ys = do
     -- liftIO $ putStrLn $ "assertImplication: " ++ show xs ++ show ys
     lift $ addClause $ map neg xs ++ ys
 
-getPackageVersion_ :: Config -> OpenedSourcePackageIndex srcpkg loc -> PackageName -> MonadSolver srcpkg loc s (Map Version (Lit s))
+getPackageVersion_ :: Config -> OpenedSourcePackageIndex srcpkg loc -> PackageName -> MonadSolver srcpkg loc s (Map Version (srcpkg, Lit s))
 getPackageVersion_ cfg sourceIndex pn = do
     let targetVersions = lookupSourcePackage pn sourceIndex
 
-    verLits <- forM targetVersions $ \_ -> lift newLit
+    verLits <- forM targetVersions $ \i -> (,) i <$> lift newLit
 
     let reorder = if cfg.reverse then reverse else id
-    lift $ assertAtMostOne $ reorder $ toList verLits
+    lift $ assertAtMostOne $ reorder $ map snd $ toList verLits
 
     return verLits
 
@@ -394,13 +394,13 @@ getComponentLiterals cfg sourceIndex pn lns = do
             compLits <- traverse (\l -> (,) l <$> lift newLit) lns
             verLits <- getPackageVersion_ cfg sourceIndex pn
             let verLits'  = Map.mapKeys (\v -> Some (SourceVersion v)) verLits
-                verLits'' = DMap.fromList [ SourceVersion v :&: ShallowInfo l | (v, l) <- Map.toList verLits ]
+                verLits'' = DMap.fromList [ SourceVersion v :&: ShallowInfo l i | (v, (i, l)) <- Map.toList verLits ]
             #packages % at pn ?= MkModelPackage
                 { components = Map.fromList (toList compLits)
                 , versions   = verLits''
                 }
 
-            return (fmap snd compLits, verLits')
+            return (fmap snd compLits, fmap snd verLits')
 
 expandCondTree
     :: forall s srcpkg loc. Config
