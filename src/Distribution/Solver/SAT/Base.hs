@@ -1,6 +1,6 @@
 module Distribution.Solver.SAT.Base (
     module X,
-    bold, blue, green, magenta, printSection, printSubsection,
+    bold, blue, green, magenta, cyan, printSection, printSubsection,
 ) where
 
 import Codec.Archive.Tar.Index   as X (TarEntryOffset)
@@ -52,6 +52,9 @@ green str = ANSI.setSGRCode [ANSI.SetColor ANSI.Foreground ANSI.Dull ANSI.Green]
 
 magenta :: String -> String
 magenta str = ANSI.setSGRCode [ANSI.SetColor ANSI.Foreground ANSI.Dull ANSI.Magenta] ++ str ++ ANSI.setSGRCode []
+
+cyan :: String -> String
+cyan str = ANSI.setSGRCode [ANSI.SetColor ANSI.Foreground ANSI.Dull ANSI.Cyan] ++ str ++ ANSI.setSGRCode []
 
 printSection :: MonadIO m => String -> m ()
 printSection s = liftIO $ do

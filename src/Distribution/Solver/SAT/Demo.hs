@@ -142,8 +142,8 @@ printSolution resolved = do
 
     forM_ resolved $ \case
         Preinstalled ip -> putStrLn $ green $ prettyShow ip.id
-        FromSource pi lns flags -> putStrLn $ unwords $
-            [ prettyShow pi ] ++
+        FromSource loc pi lns flags -> putStrLn $ unwords $
+            [ (case loc of Local -> cyan; Hackage -> id) $ prettyShow pi ] ++
             [ prettyShow ln | ln <- toList lns ] ++
             [ prettyShow flags ]
 

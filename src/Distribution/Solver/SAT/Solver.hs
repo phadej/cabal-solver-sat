@@ -15,12 +15,12 @@ import qualified Distribution.System   as C
 
 -- | Resolved package.
 data ResolvedPackage loc
-    = FromSource PackageIdentifier (Set ComponentName) FlagAssignment
+    = FromSource !loc !PackageIdentifier !(Set ComponentName) !FlagAssignment
       -- ^ build from source. We only track library components at the moment.
       --
       -- To track exe-dependencies (@build-tool-depends@), tests and benchmarks, we'll need to change to @'Set' 'LibraryName'@ to @'Set' 'ComponentName'@.
 
-    | Preinstalled InstalledPackage
+    | Preinstalled !InstalledPackage
       -- ^ Preinstalled (library) /component/ found in global package db.
   deriving (Show)
 
