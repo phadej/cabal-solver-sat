@@ -66,6 +66,12 @@ satSolver cfg platform compilerInfo installedIndex sourceIndex _pkgConfigDb _pre
             model <- flip execStateT emptyModel $ do
                 forM_  (installedPackageIndexUnits installedIndex) $ \ip -> do
                     liftIO $ printf "Installed package: %s\n" (prettyShow ip.id)
+
+                    let targetVersions = lookupSourcePackage ip.name sourceIndex'
+
+                    -- TODO
+                    unless (null targetVersions) $ liftIO $ fail "installed package has versions in source index"
+
                     l <- lift newLit
                     v <- lift newLit
                     #packages % at ip.name ?= MkModelPackage
