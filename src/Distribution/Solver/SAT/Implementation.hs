@@ -70,7 +70,7 @@ satSolver cfg platform compilerInfo installedIndex sourceIndex _pkgConfigDb _pre
                     let targetVersions = lookupSourcePackage ip.name sourceIndex'
 
                     -- TODO
-                    unless (null targetVersions) $ liftIO $ fail "installed package has versions in source index"
+                    -- unless (null targetVersions) $ liftIO $ fail $ "installed package has versions in source index: " ++ show ip.name
 
                     l <- lift newLit
                     v <- lift newLit
