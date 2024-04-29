@@ -67,7 +67,7 @@ library
     , indexed-traversable    ^>=0.1.2.1
     , optics-core            ^>=0.4.1.1
     , optics-extra           ^>=0.4.2.1
-    , sat-simple             ^>=0.1.0.0
+    , sat-simple             ^>=0.1.1.0
     , some                   ^>=1.0.5
     , tar                    ^>=0.5.1.1
     , transformers           ^>=0.5.6.2

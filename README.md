@@ -167,3 +167,19 @@ We could either encode them directly, or apply them even before encoding to SAT.
 (`cabal-install`s solver uses them similarly to other constraints, which makes the error reporting more uniform. E.g. you see that it rulled all older `lens` versions due the constraint, they don't simply disapppear).
 
 The `Set PackageName` ...
+
+Implementation
+--------------
+
+TBW
+
+Evaluation
+----------
+
+TBW
+
+Conclusion
+----------
+
+- https://github.com/commercialhaskell/stack/issues/116
+- https://github.com/HakeIO/hake-solver/tree/master
