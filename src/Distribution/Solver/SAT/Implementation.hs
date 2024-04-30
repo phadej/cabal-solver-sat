@@ -128,20 +128,30 @@ satSolver cfg platform compilerInfo installedIndex sourceIndex _pkgConfigDb _pre
             lits <- flip evalStateT model' $ forM (Map.toList $ modelVersions modelC) $ \(pn, Some ver) -> do
                 getVersionLiteral pn ver
 
-            addClause $ map neg lits
+            andDef <- newLit
+            addConjDefinition andDef lits
+            ok <- solveAssuming_ (pure (neg andDef))
+            liftIO $ printf "ok %s\n" (show ok)
 
-            saveSATstats stats
-            modelD <- solve model'
-            (model'', modelE) <- loop stats sourceIndexHdl model' modelD
+            if ok
+            then do
+                addClause $ map neg lits
 
-            printSection "Improve differences"
-            ifor_ (Map.intersectionWith (,) (modelVersions modelC) (modelVersions modelE)) $ \pn (Some a, Some b) -> do
-                unless (eqp a b) $ do
-                    liftIO $ putStrLn $ unwords [prettyShow pn, prettyShow a.version, prettyShow b.version]
+                saveSATstats stats
+                modelD <- solve model'
+                (model'', modelE) <- loop stats sourceIndexHdl model' modelD
 
-            liftIO $ modifyIORef' stats.improvements (1 +)
+                printSection "Improve differences"
+                ifor_ (Map.intersectionWith (,) (modelVersions modelC) (modelVersions modelE)) $ \pn (Some a, Some b) -> do
+                    unless (eqp a b) $ do
+                        liftIO $ putStrLn $ unwords [prettyShow pn, prettyShow a.version, prettyShow b.version]
 
-            improve solutionRef stats sourceIndexHdl model'' modelE
+                liftIO $ modifyIORef' stats.improvements (1 +)
+
+                improve solutionRef stats sourceIndexHdl model'' modelE
+
+            else
+                return (model', modelC)
 
     loop :: Stats -> OpenedSourcePackageIndex srcpkg loc -> Model srcpkg loc (Lit s) -> Model srcpkg loc Bool -> SAT s (Model srcpkg loc (Lit s), Model srcpkg loc Bool)
     loop stats sourceIndex' model modelB = do

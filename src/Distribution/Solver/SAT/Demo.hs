@@ -50,7 +50,7 @@ demoInstalledPackageIndex = mkInstalledPackageIndex
     , mk "system-cxx-std-lib" [1,0]
     , mk "template-haskell"   [2,19,0,0]
 
-    , mk "sat-simple" [0,1,0,0]
+    , mk "sat-simple" [0,1,1,0]
     ]
   where
     mk name digits = MkInstalledPackage (PackageIdentifier (mkPackageName name) (mkVersion digits)) (mkUnitId name) mempty
