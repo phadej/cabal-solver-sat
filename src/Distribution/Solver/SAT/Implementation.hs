@@ -26,29 +26,14 @@ import Control.Monad.SAT
 satSolver :: forall loc. Config -> DependencyResolver loc
 satSolver cfg platform compilerInfo installedIndex sourceIndex _pkgConfigDb _preferences _constraints targets = openSourcePackageIndex sourceIndex $ \sourceIndex' -> do
     stats <- newStats
-    solutionRef <- newIORef Nothing
-
-    let handlerIL :: Handler [ResolvedPackage loc]
-        handlerIL = Handler $ \IterationLimit -> do
-            s <- readIORef solutionRef
-            case s of
-                Nothing -> do
-                    putStrLn $ magenta "caught UnsatException"
-                    throwIO IterationLimit
-                Just s' -> return (convertModel s')
-
-        handlerUNSAT :: Handler [ResolvedPackage loc]
+    let handlerUNSAT :: Handler [ResolvedPackage loc]
         handlerUNSAT = Handler $ \UnsatException -> do
-            s <- readIORef solutionRef
-            case s of
-                Nothing -> do
-                    putStrLn $ magenta "caught UnsatException"
-                    epkgs <- readIORef stats.expandedPkgs
-                    forM_ (sortOn snd (Map.toList epkgs)) $ \(pn, n) -> when (n > 1) $ printf "%s: %d\n" (prettyShow pn) n
-                    throwIO UnsatException
-                Just s' -> return (convertModel s')
+            putStrLn $ magenta "caught UnsatException"
+            epkgs <- readIORef stats.expandedPkgs
+            forM_ (sortOn snd (Map.toList epkgs)) $ \(pn, n) -> when (n > 1) $ printf "%s: %d\n" (prettyShow pn) n
+            throwIO UnsatException
 
-        printStats :: IO ()
+    let printStats :: IO ()
         printStats = when cfg.printStats $ liftIO $ do
             printSection "Statistics"
             printf "Iterations:    %d\n" =<< readIORef stats.iteration
@@ -57,7 +42,7 @@ satSolver cfg platform compilerInfo installedIndex sourceIndex _pkgConfigDb _pre
             printf "SAT variables: %d\n" =<< readIORef stats.literals
             printf "SAT clauses:   %d\n" =<< readIORef stats.clauses
 
-    flip finally printStats $ flip catches [handlerIL, handlerUNSAT] $ do
+    flip finally printStats $ flip catches [handlerUNSAT] $ do
 
         model <- runSAT $ do
             -- create initial model
@@ -94,14 +79,14 @@ satSolver cfg platform compilerInfo installedIndex sourceIndex _pkgConfigDb _pre
 
             saveSATstats stats
             modelB <- solve model
+            modelRef <- liftIO $ newIORef model
 
             when cfg.printModels $ liftIO $ printModel modelB
 
-            (model', modelC) <- loop stats sourceIndex' model modelB
-            liftIO $ writeIORef solutionRef $ Just modelC
+            modelC <- loop stats sourceIndex' modelRef modelB
 
-            (_, modelE) <- improve solutionRef stats sourceIndex' model' modelC
-            return modelE
+            -- (_, modelE) <- improve stats sourceIndex' modelRef modelC
+            return modelC
 
         return $ convertModel model
   where
@@ -113,8 +98,14 @@ satSolver cfg platform compilerInfo installedIndex sourceIndex _pkgConfigDb _pre
             modifyIORef' stats.clauses $ max clauseN
             writeIORef stats.literals variableN
 
-    improve :: IORef (Maybe (Model srcpkg loc Bool)) -> Stats -> OpenedSourcePackageIndex srcpkg loc -> Model srcpkg loc (Lit s) -> Model srcpkg loc Bool -> SAT s (Model srcpkg loc (Lit s), Model srcpkg loc Bool)
-    improve solutionRef stats sourceIndexHdl model' modelC = do
+{-
+    improve
+        :: Stats
+        -> OpenedSourcePackageIndex srcpkg loc
+        -> IORef (Model srcpkg loc (Lit s))
+        -> Model srcpkg loc Bool
+        -> SAT s (Model srcpkg loc (Lit s), Model srcpkg loc Bool)
+    improve stats sourceIndexHdl modelRef modelC = do
         improvements <- liftIO $ readIORef stats.improvements
         if improvements >= cfg.improve
         then return (model', modelC)
@@ -148,20 +139,18 @@ satSolver cfg platform compilerInfo installedIndex sourceIndex _pkgConfigDb _pre
 
                 liftIO $ modifyIORef' stats.improvements (1 +)
 
-                improve solutionRef stats sourceIndexHdl model'' modelE
+                improve stats sourceIndexHdl model'' modelE
 
             else
                 return (model', modelC)
+-}
 
-    loop :: Stats -> OpenedSourcePackageIndex srcpkg loc -> Model srcpkg loc (Lit s) -> Model srcpkg loc Bool -> SAT s (Model srcpkg loc (Lit s), Model srcpkg loc Bool)
-    loop stats sourceIndex' model modelB = do
-        iteration <- liftIO $ readIORef stats.iteration
-        expanded  <- liftIO $ readIORef stats.expanded
-
-        liftIO $ modifyIORef' stats.iteration (1 +)
-        printSection $ printf "Iteration %d" iteration
-
-        model' <- flip execStateT model $
+    expand
+        :: Stats
+        -> OpenedSourcePackageIndex srcpkg loc
+        -> Model srcpkg loc (Lit s)
+        -> Model srcpkg loc Bool
+    expand stats sourceIndex' model modelB = flip execStateT model $
             ifor_ modelB.packages $ \pn pkg -> when (or pkg.components) $
             for_ (DMap.toList pkg.versions) $ \(ver :&: def) -> case def of
                 ShallowInfo True i -> do
@@ -186,18 +175,35 @@ satSolver cfg platform compilerInfo installedIndex sourceIndex _pkgConfigDb _pre
 
                 _ -> return ()
 
+
+    loop
+        :: Stats
+        -> OpenedSourcePackageIndex srcpkg loc
+        -> IORef (Model srcpkg loc (Lit s))
+        -> Model srcpkg loc Bool
+        -> SAT s (Model srcpkg loc Bool)
+    loop stats sourceIndex' modelRef modelB = do
+        iteration <- liftIO $ readIORef stats.iteration
+        expanded  <- liftIO $ readIORef stats.expanded
+
+        liftIO $ modifyIORef' stats.iteration (1 +)
+        printSection $ printf "Iteration %d" iteration
+        model <- liftIO $ readIORef modelRef
+        model' <- expand stats sourceIndex' model modelB
+
         expanded' <- liftIO $ readIORef stats.expanded
-        if | expanded == expanded'          -> return (model, modelB)
+        if | expanded == expanded'          -> return modelB
            | iteration >= cfg.maxIterations -> liftIO $ throwIO IterationLimit
            | otherwise -> do
               saveSATstats stats
               modelB' <- solve model'
+              liftIO $ writeIORef modelRef model' 
 
               when cfg.printModels $ do
                   printSubsection "Current model"
                   liftIO $ printModel modelB'
 
-              loop stats sourceIndex' model' modelB'
+              loop stats sourceIndex' modelRef modelB'
 
 -------------------------------------------------------------------------------
 -- Exceptions
