@@ -84,9 +84,8 @@ satSolver cfg platform compilerInfo installedIndex sourceIndex _pkgConfigDb _pre
             when cfg.printModels $ liftIO $ printModel modelB
 
             modelC <- loop stats sourceIndex' modelRef modelB
-
-            -- (_, modelE) <- improve stats sourceIndex' modelRef modelC
-            return modelC
+            modelE <- improve stats sourceIndex' modelRef modelC
+            return modelE
 
         return $ convertModel model
   where
@@ -98,59 +97,15 @@ satSolver cfg platform compilerInfo installedIndex sourceIndex _pkgConfigDb _pre
             modifyIORef' stats.clauses $ max clauseN
             writeIORef stats.literals variableN
 
-{-
-    improve
+    expand
         :: Stats
         -> OpenedSourcePackageIndex srcpkg loc
         -> IORef (Model srcpkg loc (Lit s))
         -> Model srcpkg loc Bool
-        -> SAT s (Model srcpkg loc (Lit s), Model srcpkg loc Bool)
-    improve stats sourceIndexHdl modelRef modelC = do
-        improvements <- liftIO $ readIORef stats.improvements
-        if improvements >= cfg.improve
-        then return (model', modelC)
-        else do
-            ifor_ (modelVersions modelC) $ \pn (Some ver) -> do
-                forM_ (model' ^? #packages % ix pn % #versions) $ \vers -> do
-                    for_ (DMap.toList vers) $ \(ver' :&: x) -> do
-                        when (ver'.version < ver.version) $ do
-                            addClause [neg x.value]
-
-            lits <- flip evalStateT model' $ forM (Map.toList $ modelVersions modelC) $ \(pn, Some ver) -> do
-                getVersionLiteral pn ver
-
-            andDef <- newLit
-            addConjDefinition andDef lits
-            ok <- solveAssuming_ (pure (neg andDef))
-            liftIO $ printf "ok %s\n" (show ok)
-
-            if ok
-            then do
-                addClause $ map neg lits
-
-                saveSATstats stats
-                modelD <- solve model'
-                (model'', modelE) <- loop stats sourceIndexHdl model' modelD
-
-                printSection "Improve differences"
-                ifor_ (Map.intersectionWith (,) (modelVersions modelC) (modelVersions modelE)) $ \pn (Some a, Some b) -> do
-                    unless (eqp a b) $ do
-                        liftIO $ putStrLn $ unwords [prettyShow pn, prettyShow a.version, prettyShow b.version]
-
-                liftIO $ modifyIORef' stats.improvements (1 +)
-
-                improve stats sourceIndexHdl model'' modelE
-
-            else
-                return (model', modelC)
--}
-
-    expand
-        :: Stats
-        -> OpenedSourcePackageIndex srcpkg loc
-        -> Model srcpkg loc (Lit s)
-        -> Model srcpkg loc Bool
-    expand stats sourceIndex' model modelB = flip execStateT model $
+        -> SAT s (Model srcpkg loc (Lit s))
+    expand stats sourceIndex' modelRef modelB = do
+        model  <- liftIO $ readIORef modelRef
+        model' <- flip execStateT model $
             ifor_ modelB.packages $ \pn pkg -> when (or pkg.components) $
             for_ (DMap.toList pkg.versions) $ \(ver :&: def) -> case def of
                 ShallowInfo True i -> do
@@ -171,10 +126,12 @@ satSolver cfg platform compilerInfo installedIndex sourceIndex _pkgConfigDb _pre
                         expandCondTree cfg sourceIndex' (PackageIdentifier pn ver.version) cn cnLit verLit aflags depends
 
                     #packages % ix pn % #versions %=
-                          DMap.insert ver (DeepInfo verLit gpd.location aflags di)
+                            DMap.insert ver (DeepInfo verLit gpd.location aflags di)
 
                 _ -> return ()
 
+        liftIO $ writeIORef modelRef model'
+        return model'
 
     loop
         :: Stats
@@ -188,8 +145,7 @@ satSolver cfg platform compilerInfo installedIndex sourceIndex _pkgConfigDb _pre
 
         liftIO $ modifyIORef' stats.iteration (1 +)
         printSection $ printf "Iteration %d" iteration
-        model <- liftIO $ readIORef modelRef
-        model' <- expand stats sourceIndex' model modelB
+        model' <- expand stats sourceIndex' modelRef modelB
 
         expanded' <- liftIO $ readIORef stats.expanded
         if | expanded == expanded'          -> return modelB
@@ -197,13 +153,88 @@ satSolver cfg platform compilerInfo installedIndex sourceIndex _pkgConfigDb _pre
            | otherwise -> do
               saveSATstats stats
               modelB' <- solve model'
-              liftIO $ writeIORef modelRef model' 
 
               when cfg.printModels $ do
                   printSubsection "Current model"
                   liftIO $ printModel modelB'
 
               loop stats sourceIndex' modelRef modelB'
+
+    loopAssuming
+        :: Lit s
+        -> Stats
+        -> OpenedSourcePackageIndex srcpkg loc
+        -> IORef (Model srcpkg loc (Lit s))
+        -> Model srcpkg loc Bool
+        -> SAT s (Maybe (Model srcpkg loc Bool))
+    loopAssuming ass stats sourceIndex' modelRef modelB = do
+        iteration <- liftIO $ readIORef stats.iteration
+        expanded  <- liftIO $ readIORef stats.expanded
+
+        liftIO $ modifyIORef' stats.iteration (1 +)
+        printSection $ printf "Iteration %d" iteration
+        model' <- expand stats sourceIndex' modelRef modelB
+
+        expanded' <- liftIO $ readIORef stats.expanded
+        if | expanded == expanded'          -> return (Just modelB)
+           | iteration >= cfg.maxIterations -> liftIO $ throwIO IterationLimit
+           | otherwise -> do
+              saveSATstats stats
+              mmodelB' <- solveAssuming model' (pure ass)
+              case mmodelB' of
+                Nothing -> return Nothing
+                Just modelB' -> do
+                    when cfg.printModels $ do
+                        printSubsection "Current model"
+                        liftIO $ printModel modelB'
+
+                    loopAssuming ass stats sourceIndex' modelRef modelB'
+
+    improve
+        :: Stats
+        -> OpenedSourcePackageIndex srcpkg loc
+        -> IORef (Model srcpkg loc (Lit s))
+        -> Model srcpkg loc Bool
+        -> SAT s (Model srcpkg loc Bool)
+    improve stats sourceIndexHdl modelRef modelC = do
+        improvements <- liftIO $ readIORef stats.improvements
+        if improvements >= cfg.improve
+        then return modelC
+        else do
+            model' <- liftIO $ readIORef modelRef
+
+            -- forbid older versions
+            ifor_ (modelVersions modelC) $ \pn (Some ver) -> do
+                forM_ (model' ^? #packages % ix pn % #versions) $ \vers -> do
+                    for_ (DMap.toList vers) $ \(ver' :&: x) -> do
+                        when (ver'.version < ver.version) $ do
+                            addClause [neg x.value]
+
+            lits <- flip evalStateT model' $ forM (Map.toList $ modelVersions modelC) $ \(pn, Some ver) -> do
+                getVersionLiteral pn ver
+
+            andDef <- newLit
+            addConjDefinition andDef lits
+            ok <- solveAssuming model' (pure (neg andDef))
+
+            case ok of
+                Nothing -> return modelC
+                Just modelD -> do
+                    saveSATstats stats
+                    mmodelE <- loopAssuming (neg andDef) stats sourceIndexHdl modelRef modelD
+                    case mmodelE of
+                        Nothing -> return modelC
+                        Just modelE -> do
+                            addClause [neg andDef]
+
+                            printSection "Improve differences"
+                            ifor_ (Map.intersectionWith (,) (modelVersions modelC) (modelVersions modelE)) $ \pn (Some a, Some b) -> do
+                                unless (eqp a b) $ do
+                                    liftIO $ putStrLn $ unwords [prettyShow pn, prettyShow a.version, prettyShow b.version]
+
+                            liftIO $ modifyIORef' stats.improvements (1 +)
+
+                            improve stats sourceIndexHdl modelRef modelE
 
 -------------------------------------------------------------------------------
 -- Exceptions
