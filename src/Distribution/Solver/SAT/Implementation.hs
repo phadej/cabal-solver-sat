@@ -4,6 +4,9 @@ module Distribution.Solver.SAT.Implementation (
 
 import Control.Exception            (Exception, Handler (..), catches, finally, throwIO)
 import Control.Monad.Trans.State    (StateT, evalStateT, execStateT)
+import Control.Monad.Trans.Class (MonadTrans (..))
+import Control.Monad.Trans.Identity (IdentityT (..))
+import Control.Monad.Trans.Maybe (MaybeT (..))
 import Data.IORef                   (IORef, modifyIORef', newIORef, readIORef, writeIORef)
 import Distribution.Solver.SAT.DMap (DMap, DSum (..))
 import Optics.Core                  (at, ix, (%), (^?))
@@ -24,7 +27,8 @@ import Distribution.Solver.SAT.Sources
 import Control.Monad.SAT
 
 satSolver :: forall loc. Config -> DependencyResolver loc
-satSolver cfg platform compilerInfo installedIndex sourceIndex _pkgConfigDb _preferences _constraints targets = openSourcePackageIndex sourceIndex $ \sourceIndex' -> do
+satSolver cfg platform compilerInfo installedIndex sourceIndex _pkgConfigDb _preferences _constraints targets =
+  openSourcePackageIndex sourceIndex $ \sourceIndex' -> do
     stats <- newStats
     let handlerUNSAT :: Handler [ResolvedPackage loc]
         handlerUNSAT = Handler $ \UnsatException -> do
@@ -139,26 +143,8 @@ satSolver cfg platform compilerInfo installedIndex sourceIndex _pkgConfigDb _pre
         -> IORef (Model srcpkg loc (Lit s))
         -> Model srcpkg loc Bool
         -> SAT s (Model srcpkg loc Bool)
-    loop stats sourceIndex' modelRef modelB = do
-        iteration <- liftIO $ readIORef stats.iteration
-        expanded  <- liftIO $ readIORef stats.expanded
-
-        liftIO $ modifyIORef' stats.iteration (1 +)
-        printSection $ printf "Iteration %d" iteration
-        model' <- expand stats sourceIndex' modelRef modelB
-
-        expanded' <- liftIO $ readIORef stats.expanded
-        if | expanded == expanded'          -> return modelB
-           | iteration >= cfg.maxIterations -> liftIO $ throwIO IterationLimit
-           | otherwise -> do
-              saveSATstats stats
-              modelB' <- solve model'
-
-              when cfg.printModels $ do
-                  printSubsection "Current model"
-                  liftIO $ printModel modelB'
-
-              loop stats sourceIndex' modelRef modelB'
+    loop stats sourceIndex' modelRef modelB =
+        runIdentityT (loopTrans (\m -> IdentityT (solve m)) stats sourceIndex' modelRef modelB)
 
     loopAssuming
         :: Lit s
@@ -167,28 +153,37 @@ satSolver cfg platform compilerInfo installedIndex sourceIndex _pkgConfigDb _pre
         -> IORef (Model srcpkg loc (Lit s))
         -> Model srcpkg loc Bool
         -> SAT s (Maybe (Model srcpkg loc Bool))
-    loopAssuming ass stats sourceIndex' modelRef modelB = do
-        iteration <- liftIO $ readIORef stats.iteration
-        expanded  <- liftIO $ readIORef stats.expanded
+    loopAssuming ass stats sourceIndex' modelRef modelB = 
+        runMaybeT (loopTrans (\m -> MaybeT (solveAssuming m (pure ass))) stats sourceIndex' modelRef modelB)
 
-        liftIO $ modifyIORef' stats.iteration (1 +)
-        printSection $ printf "Iteration %d" iteration
-        model' <- expand stats sourceIndex' modelRef modelB
+    loopTrans
+        :: (MonadTrans t, Monad (t (SAT s)))
+        => (Model srcpkg loc (Lit s) -> t (SAT s) (Model srcpkg loc Bool))
+        -> Stats
+        -> OpenedSourcePackageIndex srcpkg loc
+        -> IORef (Model srcpkg loc (Lit s))
+        -> Model srcpkg loc Bool
+        -> t (SAT s) (Model srcpkg loc Bool)
+    loopTrans solveFun stats sourceIndex' modelRef modelB = do
+        iteration <- lift $ liftIO $ readIORef stats.iteration
+        expanded  <- lift $ liftIO $ readIORef stats.expanded
 
-        expanded' <- liftIO $ readIORef stats.expanded
-        if | expanded == expanded'          -> return (Just modelB)
-           | iteration >= cfg.maxIterations -> liftIO $ throwIO IterationLimit
+        lift $ liftIO $ modifyIORef' stats.iteration (1 +)
+        lift $ printSection $ printf "Iteration %d" iteration
+        model' <- lift $ expand stats sourceIndex' modelRef modelB
+
+        expanded' <- lift $ liftIO $ readIORef stats.expanded
+        if | expanded == expanded'          -> return modelB
+           | iteration >= cfg.maxIterations -> lift $ liftIO $ throwIO IterationLimit
            | otherwise -> do
-              saveSATstats stats
-              mmodelB' <- solveAssuming model' (pure ass)
-              case mmodelB' of
-                Nothing -> return Nothing
-                Just modelB' -> do
-                    when cfg.printModels $ do
-                        printSubsection "Current model"
-                        liftIO $ printModel modelB'
+              lift $ saveSATstats stats
+              modelB' <- solveFun model'
+              lift $ when cfg.printModels $ do
+                  printSubsection "Current model"
+                  liftIO $ printModel modelB'
 
-                    loopAssuming ass stats sourceIndex' modelRef modelB'
+              loopTrans solveFun stats sourceIndex' modelRef modelB'
+
 
     improve
         :: Stats
